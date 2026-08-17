@@ -1,0 +1,16 @@
+/target
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Stray build artifacts
+*.pdb
+*.exe
+*.dll.pdb
