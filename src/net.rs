@@ -349,7 +349,23 @@ pub fn execute_power_action(
                 } else {
                     "Non-zero exit status returned"
                 };
-                Err(format!("Remote {} failed: {}", action, msg))
+
+                // OpenSSH's own client-side auth rejection always includes the
+                // parenthesized method list ("...Permission denied (publickey,...)"),
+                // which distinguishes "SSH login itself was rejected" from a
+                // permission error printed by the remote command (e.g. `reboot`
+                // failing without sudo) — the latter needs different advice, so
+                // don't conflate the two.
+                if msg.contains("Permission denied (") {
+                    Err(format!(
+                        "Remote {} failed: {} — power actions need passwordless SSH access to {} \
+                         (an authorized key, or Tailscale SSH via `tailscale set --ssh` on the target); \
+                         this is separate from the WOL/ping/port checks, which don't need it.",
+                        action, msg, target
+                    ))
+                } else {
+                    Err(format!("Remote {} failed: {}", action, msg))
+                }
             }
         }
         Err(e) => Err(format!("Failed to execute SSH command: {}", e)),
