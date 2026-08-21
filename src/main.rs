@@ -1,3 +1,10 @@
+// Rust links Windows binaries as console-subsystem executables by default,
+// so double-clicking the .exe pops a console window instead of going
+// straight to the GUI. Suppress that in release builds only, so `--cli`/
+// `--power` output (and eprintln! during development) still show up when
+// run from an existing terminal.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod config;
 mod net;
 mod pipeline;
