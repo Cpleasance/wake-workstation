@@ -73,7 +73,12 @@ pub struct LogEntry {
 }
 
 /// Result of a background ping/port check performed off the UI thread.
-struct CheckResult {
+///
+/// `pub(crate)` (rather than private) so the test module can hold/pass around
+/// `Option<CheckResult>` / `Receiver<CheckResult>` values (via `pending_check`,
+/// `poll_check`, and `disconnected_check_receiver`) without being able to
+/// construct or inspect one -- it never needs to name or read the fields.
+pub(crate) struct CheckResult {
     ping_alive: bool,
     latency: Option<f32>,
     port_open: bool,
@@ -81,9 +86,14 @@ struct CheckResult {
 
 pub struct PipelineState {
     pub stage: Stage,
+    /// The stage the pipeline was stuck in when it timed out, so the UI can
+    /// show which steps actually completed instead of marking everything as
+    /// failed. `None` while not timed out.
+    pub stalled_stage: Option<Stage>,
     pub start_time: Option<Instant>,
     pub elapsed_secs: u64,
     pub last_latency: Option<f32>,
+    pub latency_history: Vec<f32>,
     pub wol_count: u32,
     pub last_wol_time: Option<Instant>,
     pub is_finished: bool,
@@ -93,7 +103,14 @@ pub struct PipelineState {
     // Background check in flight for `stage`, if any. Only one check runs at a
     // time; a new thread is spawned only once the previous one's result has
     // been consumed (or the stage changed), so tick() never blocks the caller.
-    pending_check: Option<(Stage, Receiver<CheckResult>)>,
+    //
+    // Visibility is `pub(crate)` (rather than private) solely so the test
+    // module can drive `poll_check`'s rate-limiting/stage-change/disconnect
+    // branches directly and deterministically, without needing real 800ms+
+    // sleeps or relying on the timing of real background network calls.
+    pub(crate) pending_check: Option<(Stage, Receiver<CheckResult>)>,
+    pub(crate) last_check_completed: Option<Instant>,
+    pub(crate) last_checked_stage: Option<Stage>,
 }
 
 impl Default for PipelineState {
@@ -106,9 +123,11 @@ impl PipelineState {
     pub fn new() -> Self {
         let mut state = Self {
             stage: Stage::Wol,
+            stalled_stage: None,
             start_time: None,
             elapsed_secs: 0,
             last_latency: None,
+            latency_history: Vec::new(),
             wol_count: 0,
             last_wol_time: None,
             is_finished: false,
@@ -116,9 +135,22 @@ impl PipelineState {
             status_message: "Initializing wake sequence...".to_string(),
             logs: Vec::new(),
             pending_check: None,
+            last_check_completed: None,
+            last_checked_stage: None,
         };
         state.log(LogLevel::Info, "Antigravity Wake Pipeline initialized");
         state
+    }
+
+    pub fn update_latency(&mut self, latency: Option<f32>) {
+        if let Some(lat) = latency {
+            self.last_latency = Some(lat);
+            self.latency_history.push(lat);
+            if self.latency_history.len() > 30 {
+                let overflow = self.latency_history.len() - 30;
+                self.latency_history.drain(0..overflow);
+            }
+        }
     }
 
     pub fn log(&mut self, level: LogLevel, msg: impl Into<String>) {
@@ -132,6 +164,47 @@ impl PipelineState {
 
     pub fn clear_logs(&mut self) {
         self.logs.clear();
+    }
+
+    pub fn filtered_logs(&self, level_filter: Option<LogLevel>, query: &str) -> Vec<&LogEntry> {
+        let q = query.trim().to_lowercase();
+        self.logs
+            .iter()
+            .filter(|l| {
+                if let Some(level) = level_filter {
+                    if l.level != level {
+                        return false;
+                    }
+                }
+                if !q.is_empty() {
+                    let msg_match = l.message.to_lowercase().contains(&q);
+                    let tag_match = l.level.tag().to_lowercase().contains(&q);
+                    return msg_match || tag_match;
+                }
+                true
+            })
+            .collect()
+    }
+
+    pub fn progress_fraction(&self) -> f32 {
+        match self.stage {
+            Stage::Timeout => Self::stage_fraction(self.stalled_stage.unwrap_or(Stage::Wol)),
+            other => Self::stage_fraction(other),
+        }
+    }
+
+    /// Fixed progress weight for a stage, independent of whether the pipeline
+    /// is currently sitting in that stage or timed out while stuck there.
+    pub fn stage_fraction(stage: Stage) -> f32 {
+        match stage {
+            Stage::Standby => 0.0,
+            Stage::Wol => 0.15,
+            Stage::Ping => 0.40,
+            Stage::Ssh => 0.65,
+            Stage::Sunshine => 0.85,
+            Stage::Ready => 1.0,
+            Stage::Timeout => 1.0,
+        }
     }
 
     pub fn formatted_logs_text(&self) -> String {
@@ -151,24 +224,31 @@ impl PipelineState {
 
     pub fn enter_standby(&mut self, reason: &str) {
         self.stage = Stage::Standby;
+        self.stalled_stage = None;
         self.start_time = None;
         self.is_finished = true;
         self.status_message = format!("Standby: {}", reason);
         self.pending_check = None;
+        self.last_check_completed = None;
+        self.last_checked_stage = None;
         self.log(LogLevel::Warn, format!("Safe Standby engaged: {}", reason));
     }
 
     pub fn reset(&mut self, config: &HostProfile) {
         self.stage = Stage::Wol;
+        self.stalled_stage = None;
         self.start_time = Some(Instant::now());
         self.elapsed_secs = 0;
         self.last_latency = None;
+        self.latency_history.clear();
         self.wol_count = 0;
         self.last_wol_time = None;
         self.is_finished = false;
         self.auto_launched_moonlight = false;
         self.status_message = "Wake sequence started".to_string();
         self.pending_check = None;
+        self.last_check_completed = None;
+        self.last_checked_stage = None;
         self.log(
             LogLevel::Action,
             format!(
@@ -217,6 +297,7 @@ impl PipelineState {
             match send_ssh_wol(
                 &config.pi_user,
                 &config.pi_host,
+                config.pi_ssh_port,
                 &config.broadcast_addr,
                 &config.mac_address,
             ) {
@@ -247,6 +328,7 @@ impl PipelineState {
 
         if self.stage == Stage::Wol || self.stage == Stage::Standby || self.stage == Stage::Timeout {
             self.stage = Stage::Ping;
+            self.stalled_stage = None;
             self.is_finished = false;
             if self.start_time.is_none() {
                 self.start_time = Some(Instant::now());
@@ -270,6 +352,7 @@ impl PipelineState {
 
         // Check overall timeout
         if self.elapsed_secs >= config.max_wait_seconds && self.stage != Stage::Ready {
+            self.stalled_stage = Some(self.stage);
             self.stage = Stage::Timeout;
             self.status_message = format!(
                 "Timed out after {} seconds waiting for host {}",
@@ -309,9 +392,7 @@ impl PipelineState {
                     config.thinkstation_ip, self.elapsed_secs
                 );
                 if let Some(result) = self.poll_check(config, Stage::Ping) {
-                    if let Some(lat) = result.latency {
-                        self.last_latency = Some(lat);
-                    }
+                    self.update_latency(result.latency);
                     if result.ping_alive {
                         self.log(
                             LogLevel::Ok,
@@ -336,9 +417,7 @@ impl PipelineState {
                     config.ssh_port
                 );
                 if let Some(result) = self.poll_check(config, Stage::Ssh) {
-                    if let Some(lat) = result.latency {
-                        self.last_latency = Some(lat);
-                    }
+                    self.update_latency(result.latency);
                     if result.port_open {
                         self.log(
                             LogLevel::Ok,
@@ -367,9 +446,7 @@ impl PipelineState {
                     config.sunshine_port
                 );
                 if let Some(result) = self.poll_check(config, Stage::Sunshine) {
-                    if let Some(lat) = result.latency {
-                        self.last_latency = Some(lat);
-                    }
+                    self.update_latency(result.latency);
                     if result.port_open {
                         self.log(
                             LogLevel::Ok,
@@ -402,32 +479,51 @@ impl PipelineState {
             Stage::Ready => {
                 // Keep polling ping latency for real-time connection telemetry
                 if let Some(result) = self.poll_check(config, Stage::Ready) {
-                    if let Some(lat) = result.latency {
-                        self.last_latency = Some(lat);
-                    }
+                    self.update_latency(result.latency);
                 }
             }
         }
     }
 
     /// Poll the in-flight background check for `stage`, spawning one if none
-    /// is currently running. Returns `Some` only once a result has arrived;
-    /// clears the in-flight slot on completion (or on a dead sender) so the
-    /// next tick spawns a fresh check rather than re-polling a stale one.
-    fn poll_check(&mut self, config: &HostProfile, stage: Stage) -> Option<CheckResult> {
-        let need_new = !matches!(&self.pending_check, Some((s, _)) if *s == stage);
-        if need_new {
-            self.pending_check = Some((stage, spawn_check(config, stage)));
+    /// is currently running and enough time has elapsed since the last check.
+    /// Returns `Some` only once a result has arrived; clears the in-flight slot
+    /// on completion (or on a dead sender) so background checks are rate-limited.
+    pub(crate) fn poll_check(&mut self, config: &HostProfile, stage: Stage) -> Option<CheckResult> {
+        const MIN_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(800);
+
+        // If the stage changed since the last check, drop any pending check and
+        // reset completion timer so the new stage check starts immediately.
+        if self.last_checked_stage != Some(stage) {
+            self.pending_check = None;
+            self.last_check_completed = None;
+            self.last_checked_stage = Some(stage);
+        }
+
+        // If no check is running, spawn one only if enough time has passed since the last check completed
+        if self.pending_check.is_none() {
+            let ready_to_spawn = match self.last_check_completed {
+                None => true,
+                Some(last_time) => last_time.elapsed() >= MIN_CHECK_INTERVAL,
+            };
+
+            if ready_to_spawn {
+                self.pending_check = Some((stage, spawn_check(config, stage)));
+            } else {
+                return None;
+            }
         }
 
         match self.pending_check.as_ref().map(|(_, rx)| rx.try_recv()) {
             Some(Ok(result)) => {
                 self.pending_check = None;
+                self.last_check_completed = Some(Instant::now());
                 Some(result)
             }
             Some(Err(TryRecvError::Empty)) => None,
             Some(Err(TryRecvError::Disconnected)) => {
                 self.pending_check = None;
+                self.last_check_completed = Some(Instant::now());
                 None
             }
             None => None,
@@ -527,6 +623,17 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
         let _ = tx.send(result);
     });
 
+    rx
+}
+
+/// Test-only helper: build a `Receiver<CheckResult>` whose sender has already
+/// been dropped without sending, so `poll_check` observes
+/// `TryRecvError::Disconnected` on the very first poll. Used to exercise that
+/// branch deterministically instead of relying on a background thread dying.
+#[cfg(test)]
+pub(crate) fn disconnected_check_receiver() -> Receiver<CheckResult> {
+    let (tx, rx) = mpsc::channel();
+    drop(tx);
     rx
 }
 

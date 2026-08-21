@@ -106,18 +106,31 @@ pub fn send_magic_packet(mac: &str, broadcast_ip: &str, port: u16) -> Result<(),
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| format!("Failed to set socket timeout: {}", e))?;
 
-    let dest = format!("{}:{}", broadcast_ip, port);
-    socket
-        .send_to(&packet, &dest)
-        .map_err(|e| format!("Failed to send magic packet to {}: {}", dest, e))?;
+    let dest = format!("{}:{}", broadcast_ip.trim(), port);
+    let mut sent_any = false;
 
-    Ok(())
+    if socket.send_to(&packet, &dest).is_ok() {
+        sent_any = true;
+    }
+
+    // Secondary fallback broadcast to global 255.255.255.255 if target isn't already global
+    if broadcast_ip.trim() != "255.255.255.255" {
+        let global_dest = format!("255.255.255.255:{}", port);
+        let _ = socket.send_to(&packet, &global_dest);
+    }
+
+    if sent_any {
+        Ok(())
+    } else {
+        Err(format!("Failed to send magic packet to {}", dest))
+    }
 }
 
 /// Send WOL packet via Raspberry Pi SSH gateway if configured.
 pub fn send_ssh_wol(
     pi_user: &str,
     pi_host: &str,
+    pi_ssh_port: u16,
     broadcast_ip: &str,
     mac: &str,
 ) -> Result<String, String> {
@@ -134,6 +147,7 @@ pub fn send_ssh_wol(
     create_magic_packet(mac)?;
 
     let wol_cmd = format!("wakeonlan -i {} {}", broadcast_ip, mac.trim());
+    let port_str = pi_ssh_port.to_string();
     let output = Command::new("ssh")
         .args([
             "-o",
@@ -142,6 +156,8 @@ pub fn send_ssh_wol(
             "ConnectTimeout=8",
             "-o",
             "BatchMode=yes",
+            "-p",
+            &port_str,
             &format!("{}@{}", pi_user, pi_host),
             &wol_cmd,
         ])
@@ -171,14 +187,17 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
         return None;
     }
 
-    // Windows sub-millisecond format "time<1ms" or "time<1 ms" or "time < 1 ms"
-    let re_sub_ms = Regex::new(r"(?i)time\s*<\s*1\s*ms").ok()?;
+    // Windows / localized sub-millisecond format "time<1ms", "zeit<1ms", "temps<1ms", "время<1мс", "时间<1ms", etc.
+    let re_sub_ms = Regex::new(r"(?i)<\s*1\s*(?:ms|мс)").ok()?;
     if re_sub_ms.is_match(output) {
         return Some(0.5);
     }
 
-    // Standard "time=12.4 ms" or "time=12ms" or "time=0.45 ms" or "time = 0.045 ms"
-    let re_time = Regex::new(r"(?i)time\s*[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*ms?").ok()?;
+    // Standard localized reply line "time=12.4 ms", "zeit=12ms", "temps=12 ms", "tiempo=12ms", "tiempo < 1 ms", "czas=12ms", "tijd=12ms", "время=12мс", "时间=12ms", etc.
+    let re_time = Regex::new(
+        r"(?i)(?:time|zeit|temps|tiempo|tempo|czas|tijd|время|时间|時間)\s*[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
+    )
+    .ok()?;
     if let Some(caps) = re_time.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
@@ -187,9 +206,11 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
         }
     }
 
-    // Linux / macOS summary stats: "rtt min/avg/max/mdev = 12.3/14.5/..." or "round-trip min/avg/max/stddev = ..." or "round-trip min/avg/max/std-dev = ..."
+    // Linux / macOS / BSD / BusyBox summary stats:
+    // "rtt min/avg/max/mdev = 12.3/14.5/..." or "round-trip min/avg/max/stddev = ..."
+    // or BusyBox "round-trip min/avg/max = ..."
     let re_avg = Regex::new(
-        r"(?i)(?:rtt|round-trip)\s+(?:min/avg/max(?:/mdev)?|min/avg/max/std-?dev)\s*=\s*[0-9.]+/([0-9.]+)",
+        r"(?i)(?:rtt|round-trip|[a-z0-9_-]+)\s+(?:min/avg/max(?:/[a-z0-9_-]+)?|min/avg/max/std-?dev|min/avg/max)\s*=\s*[0-9.]+/([0-9.]+)",
     )
     .ok()?;
     if let Some(caps) = re_avg.captures(output) {
@@ -200,9 +221,25 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
         }
     }
 
-    // Windows summary: "Average = 12ms"
-    let re_win_avg = Regex::new(r"(?i)Average\s*=\s*([0-9]+)\s*ms").ok()?;
+    // Windows summary average across locales:
+    // English "Average = 12ms", German "Mittelwert = 12ms" / "Durchschnitt = 12ms", French "Moyenne = 12ms",
+    // Spanish "Media = 12ms" / "Promedio = 12ms", Portuguese "Média = 12ms", Italian "Medio = 12ms",
+    // Polish "Średni = 12ms", Dutch "Gemiddelde = 12ms", Russian "Среднее = 12мс", Chinese/Japanese "平均 = 12ms"
+    let re_win_avg = Regex::new(
+        r"(?i)(?:Average|Mittelwert|Durchschnitt|Moyenne|Media|Promedio|Média|Medio|Średni|Gemiddelde|Среднее|平均)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
+    )
+    .ok()?;
     if let Some(caps) = re_win_avg.captures(output) {
+        if let Some(m) = caps.get(1) {
+            if let Ok(val) = m.as_str().parse::<f32>() {
+                return Some(val);
+            }
+        }
+    }
+
+    // Generic fallback: match any numeric value following `=` or `<` and followed by `ms` or `мс`
+    let re_fallback = Regex::new(r"(?i)[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)").ok()?;
+    if let Some(caps) = re_fallback.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
                 return Some(val);
@@ -248,17 +285,69 @@ pub fn check_ping(host: &str, timeout_secs: u64) -> (bool, Option<f32>) {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let combined = format!("{}\n{}", stdout, stderr);
             let latency = parse_ping_latency(&combined);
-            let is_failed = combined.contains("100% packet loss")
-                || combined.contains("100% loss")
-                || combined.contains("Destination Host Unreachable")
-                || combined.contains("Destination host unreachable")
-                || combined.contains("Request timed out")
-                || combined.contains("0 received")
-                || combined.contains("unknown host");
+            let combined_lower = combined.to_lowercase();
+            let is_failed = combined_lower.contains("100% packet loss")
+                || combined_lower.contains("100% loss")
+                || combined_lower.contains("100% verlust")
+                || combined_lower.contains("100% de perte")
+                || combined_lower.contains("100% de pérdidas")
+                || combined_lower.contains("100% persi")
+                || combined_lower.contains("100% de perda")
+                || combined_lower.contains("100% strat")
+                || combined_lower.contains("100% verlies")
+                || combined_lower.contains("100% потерь")
+                || combined_lower.contains("100% 丢失")
+                || combined_lower.contains("100% 遺失")
+                || combined_lower.contains("destination host unreachable")
+                || combined_lower.contains("zielhost nicht erreichbar")
+                || combined_lower.contains("impossible de joindre")
+                || combined_lower.contains("host de destino inaccesible")
+                || combined_lower.contains("host de destino inacessível")
+                || combined_lower.contains("host docelowy jest nieosiągalny")
+                || combined_lower.contains("doelhost is niet bereikbaar")
+                || combined_lower.contains("узел недоступен")
+                || combined_lower.contains("无法访问")
+                || combined_lower.contains("無法到達")
+                || combined_lower.contains("request timed out")
+                || combined_lower.contains("zeitüberschreitung")
+                || combined_lower.contains("délai d'attente")
+                || combined_lower.contains("tiempo de espera agotado")
+                || combined_lower.contains("richiesta scaduta")
+                || combined_lower.contains("tempo limite")
+                || combined_lower.contains("limit czasu")
+                || combined_lower.contains("превышен интервал")
+                || combined_lower.contains("超时")
+                || combined_lower.contains("超時")
+                || combined_lower.contains("0 received")
+                || combined_lower.contains("0 empfangen")
+                || combined_lower.contains("0 reçus")
+                || combined_lower.contains("0 recibidos")
+                || combined_lower.contains("0 ricevuti")
+                || combined_lower.contains("0 odebranych")
+                || combined_lower.contains("0 ontvangen")
+                || combined_lower.contains("0 получено")
+                || combined_lower.contains("0 已接收")
+                || combined_lower.contains("unknown host")
+                || combined_lower.contains("unbekannter host")
+                || combined_lower.contains("hôte inconnu")
+                || combined_lower.contains("host desconocido")
+                || combined_lower.contains("nieznany host")
+                || combined_lower.contains("неизвестный узел");
+
+            let reply_found = combined_lower.contains("bytes from")
+                || combined_lower.contains("reply from")
+                || combined_lower.contains("antwort von")
+                || combined_lower.contains("réponse de")
+                || combined_lower.contains("respuesta desde")
+                || combined_lower.contains("risposta da")
+                || combined_lower.contains("resposta de")
+                || combined_lower.contains("odpowiedź z")
+                || combined_lower.contains("antwoord van")
+                || combined_lower.contains("ответ от")
+                || combined_lower.contains("来自");
+
             let ok = !is_failed
-                && (latency.is_some()
-                    || (output.status.success()
-                        && (combined.contains("bytes from") || combined.contains("Reply from"))));
+                && (latency.is_some() || output.status.success() || reply_found);
             (ok, latency)
         }
         Err(_) => (false, None),

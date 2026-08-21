@@ -57,6 +57,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub pi_user: Option<String>,
 
+    /// Override Pi gateway SSH port
+    #[arg(long)]
+    pub pi_ssh_port: Option<u16>,
+
     /// Force direct local UDP Wake-on-LAN
     #[arg(long)]
     pub direct_wol: bool,
@@ -112,6 +116,9 @@ pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProf
     }
     if let Some(pi_u) = &args.pi_user {
         profile.pi_user = pi_u.clone();
+    }
+    if let Some(pi_sp) = args.pi_ssh_port {
+        profile.pi_ssh_port = pi_sp;
     }
     if args.direct_wol {
         profile.direct_wol = true;
