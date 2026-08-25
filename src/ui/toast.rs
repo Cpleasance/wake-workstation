@@ -79,8 +79,15 @@ pub fn render_toasts(ctx: &egui::Context, toasts: &mut Vec<Toast>) {
                 for toast in toasts.iter().rev() {
                     let (bg, border, fg, icon) = match toast.kind {
                         ToastKind::Success => (colors::OK_BG, colors::OK, colors::OK, "\u{2713}"),
-                        ToastKind::Info => (colors::ACCENT_BG, colors::ACCENT, colors::ACCENT, "\u{2139}"),
-                        ToastKind::Warning => (colors::WARN_BG, colors::WARN, colors::WARN, "\u{26a0}"),
+                        ToastKind::Info => (
+                            colors::ACCENT_BG,
+                            colors::ACCENT,
+                            colors::ACCENT,
+                            "\u{2139}",
+                        ),
+                        ToastKind::Warning => {
+                            (colors::WARN_BG, colors::WARN, colors::WARN, "\u{26a0}")
+                        }
                         ToastKind::Error => (colors::ERR_BG, colors::ERR, colors::ERR, "\u{2717}"),
                     };
 

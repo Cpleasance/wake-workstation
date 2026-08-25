@@ -18,7 +18,10 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn test_config_atomic_saving_and_nested_directories() {
-    let dir = std::env::temp_dir().join("wake_rs_nested_test_dir_a").join("sub_b").join("sub_c");
+    let dir = std::env::temp_dir()
+        .join("wake_rs_nested_test_dir_a")
+        .join("sub_b")
+        .join("sub_c");
     let file_path = dir.join("config.json");
 
     if file_path.exists() {
@@ -468,41 +471,98 @@ fn test_validate_host_token_thorough() {
 #[test]
 fn test_ping_latency_parsing_non_english_and_unusual() {
     // English Windows ping
-    assert_eq!(parse_ping_latency("Reply from 192.168.1.50: bytes=32 time=12ms TTL=128"), Some(12.0));
-    assert_eq!(parse_ping_latency("Reply from 192.168.1.50: bytes=32 time<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 5ms, Maximum = 15ms, Average = 10ms"), Some(10.0));
+    assert_eq!(
+        parse_ping_latency("Reply from 192.168.1.50: bytes=32 time=12ms TTL=128"),
+        Some(12.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Reply from 192.168.1.50: bytes=32 time<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 5ms, Maximum = 15ms, Average = 10ms"),
+        Some(10.0)
+    );
 
     // German Windows ping ("Zeit=14ms", "Zeit<1ms", "Mittelwert = 14ms")
-    assert_eq!(parse_ping_latency("Antwort von 192.168.1.50: Bytes=32 Zeit=14ms TTL=128"), Some(14.0));
-    assert_eq!(parse_ping_latency("Antwort von 192.168.1.50: Bytes=32 Zeit<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 11ms, Maximum = 17ms, Mittelwert = 14ms"), Some(14.0));
+    assert_eq!(
+        parse_ping_latency("Antwort von 192.168.1.50: Bytes=32 Zeit=14ms TTL=128"),
+        Some(14.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Antwort von 192.168.1.50: Bytes=32 Zeit<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 11ms, Maximum = 17ms, Mittelwert = 14ms"),
+        Some(14.0)
+    );
 
     // French Windows ping ("temps=8 ms", "temps<1 ms", "Moyenne = 9ms")
-    assert_eq!(parse_ping_latency("Réponse de 192.168.1.50 : octets=32 temps=8 ms TTL=128"), Some(8.0));
-    assert_eq!(parse_ping_latency("Réponse de 192.168.1.50 : octets=32 temps < 1 ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 6ms, Maximum = 12ms, Moyenne = 9ms"), Some(9.0));
+    assert_eq!(
+        parse_ping_latency("Réponse de 192.168.1.50 : octets=32 temps=8 ms TTL=128"),
+        Some(8.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Réponse de 192.168.1.50 : octets=32 temps < 1 ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 6ms, Maximum = 12ms, Moyenne = 9ms"),
+        Some(9.0)
+    );
 
     // Spanish Windows ping ("tiempo=23ms", "tiempo<1ms", "Promedio = 23ms")
-    assert_eq!(parse_ping_latency("Respuesta desde 192.168.1.50: bytes=32 tiempo=23ms TTL=128"), Some(23.0));
-    assert_eq!(parse_ping_latency("Respuesta desde 192.168.1.50: bytes=32 tiempo<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Mínimo = 20ms, Máximo = 26ms, Promedio = 23ms"), Some(23.0));
+    assert_eq!(
+        parse_ping_latency("Respuesta desde 192.168.1.50: bytes=32 tiempo=23ms TTL=128"),
+        Some(23.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Respuesta desde 192.168.1.50: bytes=32 tiempo<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Mínimo = 20ms, Máximo = 26ms, Promedio = 23ms"),
+        Some(23.0)
+    );
 
     // Italian / Portuguese ping ("tempo=5ms", "Media = 5ms")
-    assert_eq!(parse_ping_latency("Risposta da 192.168.1.50: byte=32 tempo=5ms TTL=128"), Some(5.0));
-    assert_eq!(parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Media = 5ms"), Some(5.0));
+    assert_eq!(
+        parse_ping_latency("Risposta da 192.168.1.50: byte=32 tempo=5ms TTL=128"),
+        Some(5.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Media = 5ms"),
+        Some(5.0)
+    );
 
     // BusyBox / Alpine Linux summary stats ("round-trip min/avg/max = 1.200/3.450/5.600 ms")
-    assert_eq!(parse_ping_latency("round-trip min/avg/max = 1.200/3.450/5.600 ms"), Some(3.45));
+    assert_eq!(
+        parse_ping_latency("round-trip min/avg/max = 1.200/3.450/5.600 ms"),
+        Some(3.45)
+    );
 
     // Linux & macOS RTT summary
-    assert_eq!(parse_ping_latency("rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms"), Some(15.42));
-    assert_eq!(parse_ping_latency("round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.123 ms"), Some(2.345));
+    assert_eq!(
+        parse_ping_latency("rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms"),
+        Some(15.42)
+    );
+    assert_eq!(
+        parse_ping_latency("round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.123 ms"),
+        Some(2.345)
+    );
 
     // IPv6 ping
-    assert_eq!(parse_ping_latency("64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.412 ms"), Some(0.412));
+    assert_eq!(
+        parse_ping_latency("64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.412 ms"),
+        Some(0.412)
+    );
 
     // Spaced time format
-    assert_eq!(parse_ping_latency("64 bytes from 10.0.0.1: time = 12.34 ms"), Some(12.34));
+    assert_eq!(
+        parse_ping_latency("64 bytes from 10.0.0.1: time = 12.34 ms"),
+        Some(12.34)
+    );
 }
 
 #[test]
@@ -522,9 +582,30 @@ fn test_format_latency_all_branches() {
 #[test]
 fn test_send_ssh_wol_and_power_action_security_validation() {
     // send_ssh_wol input validation
-    assert!(send_ssh_wol("pi; rm -rf /", "192.168.1.10", 22, "192.168.1.255", "de:ad:be:ef:12:34").is_err());
-    assert!(send_ssh_wol("pi", "-oProxyCommand=evil", 22, "192.168.1.255", "de:ad:be:ef:12:34").is_err());
-    assert!(send_ssh_wol("pi", "192.168.1.10", 22, "192.168.1.255; reboot", "de:ad:be:ef:12:34").is_err());
+    assert!(send_ssh_wol(
+        "pi; rm -rf /",
+        "192.168.1.10",
+        22,
+        "192.168.1.255",
+        "de:ad:be:ef:12:34"
+    )
+    .is_err());
+    assert!(send_ssh_wol(
+        "pi",
+        "-oProxyCommand=evil",
+        22,
+        "192.168.1.255",
+        "de:ad:be:ef:12:34"
+    )
+    .is_err());
+    assert!(send_ssh_wol(
+        "pi",
+        "192.168.1.10",
+        22,
+        "192.168.1.255; reboot",
+        "de:ad:be:ef:12:34"
+    )
+    .is_err());
     assert!(send_ssh_wol("pi", "192.168.1.10", 22, "192.168.1.255", "invalid_mac").is_err());
 
     // execute_power_action input validation
@@ -545,7 +626,12 @@ fn test_pipeline_stage_names_descriptions_and_progress_fractions() {
         (Stage::Wol, "1. WOL", "Magic Packet Sent", 0.15),
         (Stage::Ping, "2. PING", "ICMP Network Ping", 0.40),
         (Stage::Ssh, "3. SSH", "SSH Daemon (Port 22)", 0.65),
-        (Stage::Sunshine, "4. STREAM", "Sunshine Stream (:47989)", 0.85),
+        (
+            Stage::Sunshine,
+            "4. STREAM",
+            "Sunshine Stream (:47989)",
+            0.85,
+        ),
         (Stage::Ready, "READY", "Target Ready to Stream", 1.0),
         (Stage::Timeout, "TIMEOUT", "Max Wait Timeout Exceeded", 1.0),
     ];
@@ -584,7 +670,9 @@ fn test_pipeline_standby_and_reset_lifecycle() {
     assert_eq!(state.stage, Stage::Standby);
     assert!(state.is_finished);
     assert!(state.start_time.is_none());
-    assert!(state.status_message.contains("Standby: Manual standby requested"));
+    assert!(state
+        .status_message
+        .contains("Standby: Manual standby requested"));
 
     // 3. In standby, tick() MUST NOT dispatch WOL or advance stage
     for _ in 0..5 {
@@ -751,14 +839,27 @@ fn test_pipeline_stalled_stage_cleared_on_wol_resend_after_timeout() {
 
     assert_eq!(state.stage, Stage::Timeout);
     assert_eq!(state.stalled_stage, Some(Stage::Ssh));
-    assert_eq!(state.progress_fraction(), PipelineState::stage_fraction(Stage::Ssh));
+    assert_eq!(
+        state.progress_fraction(),
+        PipelineState::stage_fraction(Stage::Ssh)
+    );
 
     let wol_count_before = state.wol_count;
     state.send_wol(&config);
 
-    assert_eq!(state.stage, Stage::Ping, "resend after timeout should resume at Ping");
-    assert_eq!(state.stalled_stage, None, "stalled_stage must be cleared once the pipeline resumes");
-    assert_eq!(state.progress_fraction(), PipelineState::stage_fraction(Stage::Ping));
+    assert_eq!(
+        state.stage,
+        Stage::Ping,
+        "resend after timeout should resume at Ping"
+    );
+    assert_eq!(
+        state.stalled_stage, None,
+        "stalled_stage must be cleared once the pipeline resumes"
+    );
+    assert_eq!(
+        state.progress_fraction(),
+        PipelineState::stage_fraction(Stage::Ping)
+    );
     assert!(state.wol_count > wol_count_before);
 }
 
@@ -812,7 +913,10 @@ fn test_pipeline_timeout_while_stage_is_wol_itself() {
 
     assert_eq!(state.stage, Stage::Timeout);
     assert_eq!(state.stalled_stage, Some(Stage::Wol));
-    assert_eq!(state.progress_fraction(), PipelineState::stage_fraction(Stage::Wol));
+    assert_eq!(
+        state.progress_fraction(),
+        PipelineState::stage_fraction(Stage::Wol)
+    );
     assert_eq!(state.progress_fraction(), 0.15);
 }
 
@@ -874,7 +978,10 @@ fn test_pipeline_poll_check_drops_pending_when_stage_changes_mid_flight() {
     state.pending_check = Some((Stage::Ping, disconnected_check_receiver()));
 
     let result = state.poll_check(&config, Stage::Ssh);
-    assert!(result.is_none(), "no result should be reported for the newly-started stage yet");
+    assert!(
+        result.is_none(),
+        "no result should be reported for the newly-started stage yet"
+    );
     assert_eq!(state.last_checked_stage, Some(Stage::Ssh));
     let pending_stage = state.pending_check.as_ref().map(|(stage, _)| *stage);
     assert_eq!(
@@ -900,7 +1007,10 @@ fn test_pipeline_poll_check_handles_disconnected_channel() {
 
     let result = state.poll_check(&config, Stage::Ping);
     assert!(result.is_none());
-    assert!(state.pending_check.is_none(), "disconnected channel must clear the pending slot");
+    assert!(
+        state.pending_check.is_none(),
+        "disconnected channel must clear the pending slot"
+    );
     assert!(
         state.last_check_completed.is_some(),
         "disconnected channel must still stamp completion time for rate limiting"
@@ -969,6 +1079,21 @@ fn test_cli_argument_overrides_full() {
     assert_eq!(overridden.max_wait_seconds, 180);
     assert_eq!(overridden.wol_resend_interval, 45);
     assert!(overridden.auto_close);
+
+    // Verify forcing flags off with no_direct_wol and no_auto_close
+    let initial = HostProfile {
+        direct_wol: true,
+        auto_close: true,
+        ..HostProfile::default()
+    };
+    let disable_args = CliArgs {
+        no_direct_wol: true,
+        no_auto_close: true,
+        ..CliArgs::default()
+    };
+    let forced_off = apply_cli_overrides(initial, &disable_args);
+    assert!(!forced_off.direct_wol);
+    assert!(!forced_off.auto_close);
 }
 
 #[test]
@@ -1034,11 +1159,16 @@ fn test_config_export_import_roundtrips() {
     custom_cfg.set_profile("gaming_pc", custom_prof);
     custom_cfg.active_profile = "gaming_pc".to_string();
 
-    let custom_exported = export_config_json(&custom_cfg).expect("Export custom config should succeed");
-    let custom_imported = import_config_json(&custom_exported).expect("Import custom config should succeed");
+    let custom_exported =
+        export_config_json(&custom_cfg).expect("Export custom config should succeed");
+    let custom_imported =
+        import_config_json(&custom_exported).expect("Import custom config should succeed");
     assert_eq!(custom_imported, custom_cfg);
     assert_eq!(custom_imported.active_profile, "gaming_pc");
-    assert_eq!(custom_imported.get_active_profile().thinkstation_ip, "10.0.0.100");
+    assert_eq!(
+        custom_imported.get_active_profile().thinkstation_ip,
+        "10.0.0.100"
+    );
 
     // 3. Import invalid JSON returns error
     assert!(import_config_json("").is_err());
@@ -1050,9 +1180,13 @@ fn test_config_export_import_roundtrips() {
         "thinkstation_ip": "192.168.1.99",
         "mac_address": "00:11:22:33:44:55"
     }"#;
-    let flat_imported = import_config_json(flat_json).expect("Import legacy flat profile should succeed");
+    let flat_imported =
+        import_config_json(flat_json).expect("Import legacy flat profile should succeed");
     assert_eq!(flat_imported.active_profile, "workstation");
-    assert_eq!(flat_imported.get_active_profile().thinkstation_ip, "192.168.1.99");
+    assert_eq!(
+        flat_imported.get_active_profile().thinkstation_ip,
+        "192.168.1.99"
+    );
 }
 
 #[test]
@@ -1120,9 +1254,18 @@ fn test_latency_history_buffer_bounds() {
 fn test_ping_latency_oncelock_static_regex_parsing() {
     // Verify OnceLock regex compilation produces identical results across multiple calls and formats
     let samples = [
-        ("Reply from 192.168.1.50: bytes=32 time=4.5ms TTL=64", Some(4.5)),
-        ("Reply from 192.168.1.50: bytes=32 time<1ms TTL=64", Some(0.5)),
-        ("Antwort von 192.168.1.50: Bytes=32 Zeit=8ms TTL=64", Some(8.0)),
+        (
+            "Reply from 192.168.1.50: bytes=32 time=4.5ms TTL=64",
+            Some(4.5),
+        ),
+        (
+            "Reply from 192.168.1.50: bytes=32 time<1ms TTL=64",
+            Some(0.5),
+        ),
+        (
+            "Antwort von 192.168.1.50: Bytes=32 Zeit=8ms TTL=64",
+            Some(8.0),
+        ),
         ("rtt min/avg/max/mdev = 1.1/2.2/3.3/0.4 ms", Some(2.2)),
         ("Average = 16ms", Some(16.0)),
         ("Ping rtt=33.3ms", Some(33.3)),
@@ -1142,20 +1285,59 @@ fn test_ping_latency_multithreaded_concurrency_stress() {
     use std::thread;
 
     let test_cases = Arc::new(vec![
-        ("Reply from 192.168.1.50: bytes=32 time=12ms TTL=128", Some(12.0)),
-        ("Reply from 192.168.1.50: bytes=32 time<1ms TTL=128", Some(0.5)),
-        ("Antwort von 10.0.0.1: Bytes=32 Zeit=14ms TTL=128", Some(14.0)),
+        (
+            "Reply from 192.168.1.50: bytes=32 time=12ms TTL=128",
+            Some(12.0),
+        ),
+        (
+            "Reply from 192.168.1.50: bytes=32 time<1ms TTL=128",
+            Some(0.5),
+        ),
+        (
+            "Antwort von 10.0.0.1: Bytes=32 Zeit=14ms TTL=128",
+            Some(14.0),
+        ),
         ("Antwort von 10.0.0.1: Bytes=32 Zeit<1ms TTL=128", Some(0.5)),
-        ("Réponse de 172.16.0.1 : octets=32 temps=8 ms TTL=128", Some(8.0)),
-        ("Respuesta desde 192.168.1.1: bytes=32 tiempo=23ms TTL=128", Some(23.0)),
-        ("Risposta da 192.168.1.50: byte=32 tempo=5ms TTL=128", Some(5.0)),
-        ("Odpowiedź z 192.168.1.50: bajty=32 czas=18ms TTL=64", Some(18.0)),
-        ("Antwoord van 192.168.1.50: bytes=32 tijd=16ms TTL=64", Some(16.0)),
-        ("Ответ от 192.168.1.50: число байт=32 время=4мс TTL=64", Some(4.0)),
-        ("来自 192.168.1.50 的回复: 字节=32 时间=2ms TTL=64", Some(2.0)),
-        ("來自 192.168.1.50 的回覆: 位元組=32 時間=3ms TTL=64", Some(3.0)),
-        ("64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.456 ms", Some(0.456)),
-        ("rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms", Some(15.42)),
+        (
+            "Réponse de 172.16.0.1 : octets=32 temps=8 ms TTL=128",
+            Some(8.0),
+        ),
+        (
+            "Respuesta desde 192.168.1.1: bytes=32 tiempo=23ms TTL=128",
+            Some(23.0),
+        ),
+        (
+            "Risposta da 192.168.1.50: byte=32 tempo=5ms TTL=128",
+            Some(5.0),
+        ),
+        (
+            "Odpowiedź z 192.168.1.50: bajty=32 czas=18ms TTL=64",
+            Some(18.0),
+        ),
+        (
+            "Antwoord van 192.168.1.50: bytes=32 tijd=16ms TTL=64",
+            Some(16.0),
+        ),
+        (
+            "Ответ от 192.168.1.50: число байт=32 время=4мс TTL=64",
+            Some(4.0),
+        ),
+        (
+            "来自 192.168.1.50 的回复: 字节=32 时间=2ms TTL=64",
+            Some(2.0),
+        ),
+        (
+            "來自 192.168.1.50 的回覆: 位元組=32 時間=3ms TTL=64",
+            Some(3.0),
+        ),
+        (
+            "64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.456 ms",
+            Some(0.456),
+        ),
+        (
+            "rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms",
+            Some(15.42),
+        ),
         ("round-trip min/avg/max = 1.200/3.450/5.600 ms", Some(3.45)),
         ("Request timed out.", None),
         ("Destination host unreachable.", None),
@@ -1181,7 +1363,9 @@ fn test_ping_latency_multithreaded_concurrency_stress() {
     }
 
     for handle in handles {
-        handle.join().expect("Thread should finish cleanly without panic");
+        handle
+            .join()
+            .expect("Thread should finish cleanly without panic");
     }
 }
 
@@ -1219,81 +1403,240 @@ fn test_ping_latency_throughput_performance_benchmark() {
 #[test]
 fn test_ping_latency_exhaustive_international_locales_and_edge_cases() {
     // English formats
-    assert_eq!(parse_ping_latency("Reply from 10.0.0.1: bytes=32 time=12ms TTL=64"), Some(12.0));
-    assert_eq!(parse_ping_latency("Reply from 10.0.0.1: bytes=32 time<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Reply from 10.0.0.1: bytes=32 time = 15.6 ms TTL=64"), Some(15.6));
-    assert_eq!(parse_ping_latency("Reply from 10.0.0.1: bytes=32 time < 1 ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 5ms, Maximum = 15ms, Average = 10ms"), Some(10.0));
-    assert_eq!(parse_ping_latency("Minimum = 5.2ms, Maximum = 15.8ms, Average = 10.5ms"), Some(10.5));
+    assert_eq!(
+        parse_ping_latency("Reply from 10.0.0.1: bytes=32 time=12ms TTL=64"),
+        Some(12.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Reply from 10.0.0.1: bytes=32 time<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Reply from 10.0.0.1: bytes=32 time = 15.6 ms TTL=64"),
+        Some(15.6)
+    );
+    assert_eq!(
+        parse_ping_latency("Reply from 10.0.0.1: bytes=32 time < 1 ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 5ms, Maximum = 15ms, Average = 10ms"),
+        Some(10.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 5.2ms, Maximum = 15.8ms, Average = 10.5ms"),
+        Some(10.5)
+    );
 
     // German formats
-    assert_eq!(parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit=14ms TTL=128"), Some(14.0));
-    assert_eq!(parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit < 1 ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 11ms, Maximum = 17ms, Mittelwert = 14ms"), Some(14.0));
-    assert_eq!(parse_ping_latency("Minimum = 10ms, Maximum = 20ms, Durchschnitt = 15ms"), Some(15.0));
+    assert_eq!(
+        parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit=14ms TTL=128"),
+        Some(14.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Antwort von 10.0.0.1: Bytes=32 Zeit < 1 ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 11ms, Maximum = 17ms, Mittelwert = 14ms"),
+        Some(14.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 10ms, Maximum = 20ms, Durchschnitt = 15ms"),
+        Some(15.0)
+    );
 
     // French formats
-    assert_eq!(parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps=8 ms TTL=128"), Some(8.0));
-    assert_eq!(parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps < 1 ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 6ms, Maximum = 12ms, Moyenne = 9ms"), Some(9.0));
-    assert_eq!(parse_ping_latency("Minimum = 6.2ms, Maximum = 12.4ms, Moyenne = 8.5ms"), Some(8.5));
+    assert_eq!(
+        parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps=8 ms TTL=128"),
+        Some(8.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Réponse de 10.0.0.1 : octets=32 temps < 1 ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 6ms, Maximum = 12ms, Moyenne = 9ms"),
+        Some(9.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 6.2ms, Maximum = 12.4ms, Moyenne = 8.5ms"),
+        Some(8.5)
+    );
 
     // Spanish formats
-    assert_eq!(parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo=23ms TTL=128"), Some(23.0));
-    assert_eq!(parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo < 1 ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Mínimo = 20ms, Máximo = 26ms, Promedio = 23ms"), Some(23.0));
-    assert_eq!(parse_ping_latency("Mínimo = 2ms, Máximo = 10ms, Media = 5ms"), Some(5.0));
+    assert_eq!(
+        parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo=23ms TTL=128"),
+        Some(23.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Respuesta desde 10.0.0.1: bytes=32 tiempo < 1 ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Mínimo = 20ms, Máximo = 26ms, Promedio = 23ms"),
+        Some(23.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Mínimo = 2ms, Máximo = 10ms, Media = 5ms"),
+        Some(5.0)
+    );
 
     // Portuguese formats
-    assert_eq!(parse_ping_latency("Resposta de 10.0.0.1: bytes=32 tempo=7ms TTL=64"), Some(7.0));
-    assert_eq!(parse_ping_latency("Resposta de 10.0.0.1: bytes=32 tempo<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Mínimo = 4ms, Máximo = 12ms, Média = 8ms"), Some(8.0));
+    assert_eq!(
+        parse_ping_latency("Resposta de 10.0.0.1: bytes=32 tempo=7ms TTL=64"),
+        Some(7.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Resposta de 10.0.0.1: bytes=32 tempo<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Mínimo = 4ms, Máximo = 12ms, Média = 8ms"),
+        Some(8.0)
+    );
 
     // Italian formats
-    assert_eq!(parse_ping_latency("Risposta da 10.0.0.1: byte=32 tempo=5ms TTL=128"), Some(5.0));
-    assert_eq!(parse_ping_latency("Risposta da 10.0.0.1: byte=32 tempo<1ms TTL=128"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Medio = 6ms"), Some(6.0));
-    assert_eq!(parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Media = 5ms"), Some(5.0));
+    assert_eq!(
+        parse_ping_latency("Risposta da 10.0.0.1: byte=32 tempo=5ms TTL=128"),
+        Some(5.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Risposta da 10.0.0.1: byte=32 tempo<1ms TTL=128"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Medio = 6ms"),
+        Some(6.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimo = 4ms, Massimo = 8ms, Media = 5ms"),
+        Some(5.0)
+    );
 
     // Polish formats
-    assert_eq!(parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas=18ms TTL=64"), Some(18.0));
-    assert_eq!(parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas < 1 ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 12ms, Maksimum = 24ms, Średni = 18ms"), Some(18.0));
+    assert_eq!(
+        parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas=18ms TTL=64"),
+        Some(18.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Odpowiedź z 10.0.0.1: bajty=32 czas < 1 ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 12ms, Maksimum = 24ms, Średni = 18ms"),
+        Some(18.0)
+    );
 
     // Dutch formats
-    assert_eq!(parse_ping_latency("Antwoord van 10.0.0.1: bytes=32 tijd=16ms TTL=64"), Some(16.0));
-    assert_eq!(parse_ping_latency("Antwoord van 10.0.0.1: bytes=32 tijd<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Minimum = 10ms, Maximum = 22ms, Gemiddelde = 16ms"), Some(16.0));
+    assert_eq!(
+        parse_ping_latency("Antwoord van 10.0.0.1: bytes=32 tijd=16ms TTL=64"),
+        Some(16.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Antwoord van 10.0.0.1: bytes=32 tijd<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Minimum = 10ms, Maximum = 22ms, Gemiddelde = 16ms"),
+        Some(16.0)
+    );
 
     // Russian formats
-    assert_eq!(parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время=4мс TTL=64"), Some(4.0));
-    assert_eq!(parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время<1мс TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время < 1 мс TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("Минимум = 1мс, Максимум = 8мс, Среднее = 3мс"), Some(3.0));
+    assert_eq!(
+        parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время=4мс TTL=64"),
+        Some(4.0)
+    );
+    assert_eq!(
+        parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время<1мс TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Ответ от 10.0.0.1: число байт=32 время < 1 мс TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("Минимум = 1мс, Максимум = 8мс, Среднее = 3мс"),
+        Some(3.0)
+    );
 
     // Chinese (Simplified & Traditional) and Japanese formats
-    assert_eq!(parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间=2ms TTL=64"), Some(2.0));
-    assert_eq!(parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间 < 1 ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("最短 = 1ms，最长 = 5ms，平均 = 2ms"), Some(2.0));
-    assert_eq!(parse_ping_latency("來自 10.0.0.1 的回覆: 位元組=32 時間=3ms TTL=64"), Some(3.0));
-    assert_eq!(parse_ping_latency("來自 10.0.0.1 的回覆: 位元組=32 時間<1ms TTL=64"), Some(0.5));
-    assert_eq!(parse_ping_latency("最短 = 1ms，最長 = 5ms，平均 = 3.5ms"), Some(3.5));
+    assert_eq!(
+        parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间=2ms TTL=64"),
+        Some(2.0)
+    );
+    assert_eq!(
+        parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("来自 10.0.0.1 的回复: 字节=32 时间 < 1 ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("最短 = 1ms，最长 = 5ms，平均 = 2ms"),
+        Some(2.0)
+    );
+    assert_eq!(
+        parse_ping_latency("來自 10.0.0.1 的回覆: 位元組=32 時間=3ms TTL=64"),
+        Some(3.0)
+    );
+    assert_eq!(
+        parse_ping_latency("來自 10.0.0.1 的回覆: 位元組=32 時間<1ms TTL=64"),
+        Some(0.5)
+    );
+    assert_eq!(
+        parse_ping_latency("最短 = 1ms，最長 = 5ms，平均 = 3.5ms"),
+        Some(3.5)
+    );
 
     // Linux / macOS / BSD ping formats
-    assert_eq!(parse_ping_latency("64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.345 ms"), Some(0.345));
-    assert_eq!(parse_ping_latency("64 bytes from 10.0.0.1: icmp_seq=2 ttl=64 time=14.8 ms"), Some(14.8));
-    assert_eq!(parse_ping_latency("rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms"), Some(15.42));
-    assert_eq!(parse_ping_latency("round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.123 ms"), Some(2.345));
-    assert_eq!(parse_ping_latency("round-trip min/avg/max = 0.850/1.250/2.100 ms"), Some(1.25));
+    assert_eq!(
+        parse_ping_latency("64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=0.345 ms"),
+        Some(0.345)
+    );
+    assert_eq!(
+        parse_ping_latency("64 bytes from 10.0.0.1: icmp_seq=2 ttl=64 time=14.8 ms"),
+        Some(14.8)
+    );
+    assert_eq!(
+        parse_ping_latency("rtt min/avg/max/mdev = 12.300/15.420/18.100/2.100 ms"),
+        Some(15.42)
+    );
+    assert_eq!(
+        parse_ping_latency("round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.123 ms"),
+        Some(2.345)
+    );
+    assert_eq!(
+        parse_ping_latency("round-trip min/avg/max = 0.850/1.250/2.100 ms"),
+        Some(1.25)
+    );
 
     // IPv6 formats
-    assert_eq!(parse_ping_latency("64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.412 ms"), Some(0.412));
-    assert_eq!(parse_ping_latency("Reply from 2001:db8::1: time=24ms"), Some(24.0));
+    assert_eq!(
+        parse_ping_latency("64 bytes from fe80::1%eth0: icmp_seq=1 ttl=64 time=0.412 ms"),
+        Some(0.412)
+    );
+    assert_eq!(
+        parse_ping_latency("Reply from 2001:db8::1: time=24ms"),
+        Some(24.0)
+    );
 
     // Noise & failure outputs
     assert_eq!(parse_ping_latency(""), None);
@@ -1394,7 +1737,9 @@ fn test_sound_alert_stage_timeout_trigger_and_stalled_stage() {
     assert_eq!(state.stage, Stage::Timeout);
     assert_eq!(state.stalled_stage, Some(Stage::Ssh));
     assert!(state.is_finished);
-    assert!(state.status_message.contains("Timed out after 2 seconds waiting for host 192.168.1.75"));
+    assert!(state
+        .status_message
+        .contains("Timed out after 2 seconds waiting for host 192.168.1.75"));
 
     // Verify error log entry was added
     let logs = state.formatted_logs_text();
@@ -1447,10 +1792,15 @@ fn test_sound_alert_state_reset_and_ready_timeout_immunity() {
 #[cfg(windows)]
 #[test]
 fn test_enhanced_moonlight_discovery_windows_paths() {
-    use crate::net::{get_windows_moonlight_exe_paths, get_windows_moonlight_lnk_paths, launch_lnk_file};
+    use crate::net::{
+        get_windows_moonlight_exe_paths, get_windows_moonlight_lnk_paths, launch_lnk_file,
+    };
 
     let exe_paths = get_windows_moonlight_exe_paths();
-    assert!(!exe_paths.is_empty(), "Must produce executable candidate paths on Windows");
+    assert!(
+        !exe_paths.is_empty(),
+        "Must produce executable candidate paths on Windows"
+    );
 
     for p in &exe_paths {
         assert!(
@@ -1489,7 +1839,10 @@ fn test_enhanced_moonlight_discovery_windows_paths() {
         .any(|s| s.contains("chocolatey") && s.ends_with("moonlight.exe")));
 
     let lnk_paths = get_windows_moonlight_lnk_paths();
-    assert!(!lnk_paths.is_empty(), "Must produce shortcut .lnk candidate paths on Windows");
+    assert!(
+        !lnk_paths.is_empty(),
+        "Must produce shortcut .lnk candidate paths on Windows"
+    );
 
     for p in &lnk_paths {
         assert!(
@@ -1678,7 +2031,10 @@ fn test_modal_space_and_enter_key_routing_by_stage() {
     state.is_finished = true;
     let mut launched = false;
     if state.stage == Stage::Ready {
-        state.log(LogLevel::Action, "Manual Moonlight launch requested (Space/Enter)");
+        state.log(
+            LogLevel::Action,
+            "Manual Moonlight launch requested (Space/Enter)",
+        );
         launched = true;
     }
     assert!(launched);
@@ -1695,7 +2051,9 @@ fn test_modal_space_and_enter_key_routing_by_stage() {
 
 #[test]
 fn test_new_profile_modal_validation_and_creation() {
-    use crate::config::{validate_broadcast_ip, validate_mac_address, validate_target_ip, validate_username};
+    use crate::config::{
+        validate_broadcast_ip, validate_mac_address, validate_target_ip, validate_username,
+    };
     use crate::ui::{ReachabilityState, WakeApp};
 
     let temp_config_path = std::env::temp_dir().join("test_wake_new_prof_config.json");
@@ -1733,11 +2091,17 @@ fn test_new_profile_modal_validation_and_creation() {
     // 1. Empty name input is rejected (does not create profile)
     app.new_profile_name_input = "".to_string();
     let name_trim = app.new_profile_name_input.trim().to_string();
-    assert!(name_trim.is_empty(), "Empty profile name must not be accepted");
+    assert!(
+        name_trim.is_empty(),
+        "Empty profile name must not be accepted"
+    );
 
     app.new_profile_name_input = "   \t  ".to_string();
     let name_spaces = app.new_profile_name_input.trim().to_string();
-    assert!(name_spaces.is_empty(), "Whitespace profile name must not be accepted");
+    assert!(
+        name_spaces.is_empty(),
+        "Whitespace profile name must not be accepted"
+    );
 
     // 2. Valid profile name creation
     app.new_profile_name_input = "  gaming-rig  ".to_string();
@@ -1971,30 +2335,64 @@ fn test_responsive_width_and_centering_padding_calculations() {
     let (cw_sub, sp_sub) = compute_layout(1280.8);
     assert_eq!(cw_sub, 1280.0);
     assert!((sp_sub - 0.4).abs() < 1e-4);
-    assert!(sp_sub <= 0.5, "Sub-pixel side padding should not trigger spacer allocation");
+    assert!(
+        sp_sub <= 0.5,
+        "Sub-pixel side padding should not trigger spacer allocation"
+    );
 
     // 5. Spacer allocation threshold (avail_width = 1282.0px -> side_pad = 1.0px > 0.5px)
     let (cw_pad, sp_pad) = compute_layout(1282.0);
     assert_eq!(cw_pad, 1280.0);
     assert_eq!(sp_pad, 1.0);
-    assert!(sp_pad > 0.5, "Side padding > 0.5px must trigger spacer allocation");
+    assert!(
+        sp_pad > 0.5,
+        "Side padding > 0.5px must trigger spacer allocation"
+    );
 
     // 6. Intermediate and standard display resolutions (1080p, 1440p, 4K UHD, Ultrawide)
     let resolutions = [
         ("1000px Window", 1000.0 - 32.0, 968.0, 0.0),
         ("1200px Window", 1200.0 - 32.0, 1168.0, 0.0),
-        ("1080p Full HD (1920px)", 1920.0 - 32.0, 1280.0, (1888.0 - 1280.0) / 2.0),
-        ("1440p QHD (2560px)", 2560.0 - 32.0, 1280.0, (2528.0 - 1280.0) / 2.0),
-        ("4K UHD (3840px)", 3840.0 - 32.0, 1280.0, (3808.0 - 1280.0) / 2.0),
-        ("Ultrawide (3440px)", 3440.0 - 32.0, 1280.0, (3408.0 - 1280.0) / 2.0),
+        (
+            "1080p Full HD (1920px)",
+            1920.0 - 32.0,
+            1280.0,
+            (1888.0 - 1280.0) / 2.0,
+        ),
+        (
+            "1440p QHD (2560px)",
+            2560.0 - 32.0,
+            1280.0,
+            (2528.0 - 1280.0) / 2.0,
+        ),
+        (
+            "4K UHD (3840px)",
+            3840.0 - 32.0,
+            1280.0,
+            (3808.0 - 1280.0) / 2.0,
+        ),
+        (
+            "Ultrawide (3440px)",
+            3440.0 - 32.0,
+            1280.0,
+            (3408.0 - 1280.0) / 2.0,
+        ),
     ];
 
     for (label, avail_w, expected_cw, expected_sp) in resolutions {
         let (cw, sp) = compute_layout(avail_w);
         assert_eq!(cw, expected_cw, "Content width mismatch for {}", label);
-        assert!((sp - expected_sp).abs() < 1e-4, "Side pad mismatch for {}", label);
+        assert!(
+            (sp - expected_sp).abs() < 1e-4,
+            "Side pad mismatch for {}",
+            label
+        );
         // Conservation of width invariant: 2 * side_pad + content_width == avail_width
-        assert!((2.0 * sp + cw - avail_w).abs() < 1e-4, "Width conservation failed for {}", label);
+        assert!(
+            (2.0 * sp + cw - avail_w).abs() < 1e-4,
+            "Width conservation failed for {}",
+            label
+        );
     }
 
     // 7. Narrow / sub-minimum and boundary edge cases
@@ -2002,7 +2400,10 @@ fn test_responsive_width_and_centering_padding_calculations() {
     for &narrow_w in &narrow_cases {
         let (cw, sp) = compute_layout(narrow_w);
         assert_eq!(cw, narrow_w.min(1280.0));
-        assert_eq!(sp, 0.0, "Side padding must never be negative for narrow widths");
+        assert_eq!(
+            sp, 0.0,
+            "Side padding must never be negative for narrow widths"
+        );
     }
 }
 
@@ -2015,42 +2416,60 @@ fn test_header_responsive_stacked_vs_horizontal_breakpoint() {
     //   if avail_width < STACK_BELOW_WIDTH { stacked } else { horizontal }
     const STACK_BELOW_WIDTH: f32 = 640.0;
 
-    let is_stacked = |avail_width: f32| -> bool {
-        avail_width < STACK_BELOW_WIDTH
-    };
+    let is_stacked = |avail_width: f32| -> bool { avail_width < STACK_BELOW_WIDTH };
 
     // 1. Exact boundary checks around 640.0px
     assert!(is_stacked(639.0), "639.0px must trigger stacked layout");
     assert!(is_stacked(639.99), "639.99px must trigger stacked layout");
-    assert!(!is_stacked(640.0), "640.0px exact boundary must use single-row horizontal layout");
-    assert!(!is_stacked(640.01), "640.01px must use single-row horizontal layout");
-    assert!(!is_stacked(641.0), "641.0px must use single-row horizontal layout");
+    assert!(
+        !is_stacked(640.0),
+        "640.0px exact boundary must use single-row horizontal layout"
+    );
+    assert!(
+        !is_stacked(640.01),
+        "640.01px must use single-row horizontal layout"
+    );
+    assert!(
+        !is_stacked(641.0),
+        "641.0px must use single-row horizontal layout"
+    );
 
     // 2. Typical window sizes & inner panel available width
     // Inside CentralPanel, panel_frame() has inner_margin(SPACE_MD = 12.0) on both sides (total 24.0px)
-    let header_avail_for_content_w = |content_w: f32| -> f32 {
-        content_w - 2.0 * metrics::SPACE_MD
-    };
+    let header_avail_for_content_w =
+        |content_w: f32| -> f32 { content_w - 2.0 * metrics::SPACE_MD };
 
     // Minimum window width 700.0px (content_width = 668.0px) -> header avail = 644.0px >= 640.0px
     let header_avail_min = header_avail_for_content_w(668.0);
     assert_eq!(header_avail_min, 644.0);
-    assert!(!is_stacked(header_avail_min), "Minimum supported window width (700px) must retain single-row horizontal header");
+    assert!(
+        !is_stacked(header_avail_min),
+        "Minimum supported window width (700px) must retain single-row horizontal header"
+    );
 
     // Default window width 780.0px (content_width = 748.0px) -> header avail = 724.0px >= 640.0px
     let header_avail_def = header_avail_for_content_w(748.0);
     assert_eq!(header_avail_def, 724.0);
-    assert!(!is_stacked(header_avail_def), "Default window width (780px) must retain single-row horizontal header");
+    assert!(
+        !is_stacked(header_avail_def),
+        "Default window width (780px) must retain single-row horizontal header"
+    );
 
     // Max content width 1280.0px -> header avail = 1256.0px >= 640.0px
     let header_avail_max = header_avail_for_content_w(1280.0);
     assert_eq!(header_avail_max, 1256.0);
-    assert!(!is_stacked(header_avail_max), "Max content width (1280px) must retain single-row horizontal header");
+    assert!(
+        !is_stacked(header_avail_max),
+        "Max content width (1280px) must retain single-row horizontal header"
+    );
 
     // Compact window (e.g. 640px window -> content_width = 608px -> header avail = 584px < 640px)
     let header_avail_compact = header_avail_for_content_w(608.0);
     assert_eq!(header_avail_compact, 584.0);
-    assert!(is_stacked(header_avail_compact), "Compact window (<664px content) must stack header vertically");
+    assert!(
+        is_stacked(header_avail_compact),
+        "Compact window (<664px content) must stack header vertically"
+    );
 }
 
 #[test]
@@ -2076,10 +2495,14 @@ fn test_stepper_card_distribution_breakpoints_and_geometry() {
     let compute_stepper = |avail_w: f32| -> StepperMode {
         let one_row_card_width = (avail_w - 3.0 * gap) / 4.0;
         if one_row_card_width >= MIN_COMFORTABLE_CARD {
-            StepperMode::SingleRow { card_width: one_row_card_width }
+            StepperMode::SingleRow {
+                card_width: one_row_card_width,
+            }
         } else {
             let two_col_card_width = ((avail_w - gap) / 2.0).max(90.0);
-            StepperMode::TwoByTwoGrid { card_width: two_col_card_width }
+            StepperMode::TwoByTwoGrid {
+                card_width: two_col_card_width,
+            }
         }
     };
 
@@ -2183,7 +2606,11 @@ fn test_stepper_card_distribution_breakpoints_and_geometry() {
             Stage::Ready => 5,
             Stage::Timeout => 0,
         };
-        assert_eq!(order, expected_order, "Stage order mismatch for {:?}", stage);
+        assert_eq!(
+            order, expected_order,
+            "Stage order mismatch for {:?}",
+            stage
+        );
     }
 }
 
@@ -2204,7 +2631,11 @@ fn test_sparkline_width_bounds_and_rendering_geometry() {
         }
         let n = history.len();
         let max_val = history.iter().copied().fold(10.0_f32, f32::max);
-        let min_val = history.iter().copied().fold(f32::INFINITY, f32::min).min(0.0);
+        let min_val = history
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min)
+            .min(0.0);
         let range = (max_val - min_val).max(1.0);
 
         history
@@ -2261,13 +2692,30 @@ fn test_sparkline_width_bounds_and_rendering_geometry() {
     // Validate strict coordinate containment and x-monotonicity for all points
     for i in 0..pts_full.len() {
         let pt = pts_full[i];
-        assert!(pt.x >= rect.min.x && pt.x <= rect.max.x, "X out of bounds: {}", pt.x);
-        assert!(pt.y >= rect.min.y && pt.y <= rect.max.y, "Y out of bounds: {}", pt.y);
-        assert!(!pt.x.is_nan() && !pt.y.is_nan(), "Coordinates must not be NaN");
-        assert!(!pt.x.is_infinite() && !pt.y.is_infinite(), "Coordinates must not be infinite");
+        assert!(
+            pt.x >= rect.min.x && pt.x <= rect.max.x,
+            "X out of bounds: {}",
+            pt.x
+        );
+        assert!(
+            pt.y >= rect.min.y && pt.y <= rect.max.y,
+            "Y out of bounds: {}",
+            pt.y
+        );
+        assert!(
+            !pt.x.is_nan() && !pt.y.is_nan(),
+            "Coordinates must not be NaN"
+        );
+        assert!(
+            !pt.x.is_infinite() && !pt.y.is_infinite(),
+            "Coordinates must not be infinite"
+        );
 
         if i > 0 {
-            assert!(pt.x > pts_full[i - 1].x, "X coordinates must strictly increase monotonically");
+            assert!(
+                pt.x > pts_full[i - 1].x,
+                "X coordinates must strictly increase monotonically"
+            );
         }
     }
 
@@ -2285,14 +2733,21 @@ fn test_sparkline_width_bounds_and_rendering_geometry() {
     let pts_ident = compute_sparkline_points(&identical_vals, rect);
     for pt in &pts_ident {
         let expected_y = rect.max.y - 0.5 * rect.height();
-        assert!((pt.y - expected_y).abs() < 1e-4, "5.0ms on 10.0ms baseline must align to vertical center");
+        assert!(
+            (pt.y - expected_y).abs() < 1e-4,
+            "5.0ms on 10.0ms baseline must align to vertical center"
+        );
     }
 
     // 5c. Negative values (corrupt / clock skew) and extreme spikes (10,000ms)
     let extreme_vals = [-20.0, 0.0, 5000.0, 10000.0, -5.0];
     let pts_extreme = compute_sparkline_points(&extreme_vals, rect);
     for pt in &pts_extreme {
-        assert!(pt.y >= rect.min.y && pt.y <= rect.max.y, "Extreme value clamped within [min.y, max.y]: {}", pt.y);
+        assert!(
+            pt.y >= rect.min.y && pt.y <= rect.max.y,
+            "Extreme value clamped within [min.y, max.y]: {}",
+            pt.y
+        );
     }
 
     // 6. Progress bar track geometry validation (src/ui/hero.rs lines 67-84)
@@ -2356,8 +2811,14 @@ fn test_vertical_space_budgeting_and_console_height_allocations() {
     // 4. Clamped Min Console Height in Small / Constrained Viewports
     // When remaining available height is 80.0px (< MIN_CONSOLE_HEIGHT = 110.0px) -> clamped to 110.0px
     let (ch_clamp, ih_clamp) = compute_console_heights(80.0, false);
-    assert_eq!(ch_clamp, 110.0, "Console height must not drop below MIN_CONSOLE_HEIGHT (110.0px)");
-    assert_eq!(ih_clamp, 60.0, "Inner scroll area must equal max(110 - 60, 60) = 60.0px");
+    assert_eq!(
+        ch_clamp, 110.0,
+        "Console height must not drop below MIN_CONSOLE_HEIGHT (110.0px)"
+    );
+    assert_eq!(
+        ih_clamp, 60.0,
+        "Inner scroll area must equal max(110 - 60, 60) = 60.0px"
+    );
 
     // Extreme zero/negative remaining height -> clamped to 110.0px, inner to 60.0px
     let (ch_zero, ih_zero) = compute_console_heights(0.0, false);
@@ -2372,7 +2833,10 @@ fn test_vertical_space_budgeting_and_console_height_allocations() {
     // Always allocates exactly 36.0px regardless of window height
     for &avail_h in &[0.0, 50.0, 200.0, 500.0, 1000.0] {
         let (ch_col, _) = compute_console_heights(avail_h, true);
-        assert_eq!(ch_col, 36.0, "Collapsed console must always have height 36.0px");
+        assert_eq!(
+            ch_col, 36.0,
+            "Collapsed console must always have height 36.0px"
+        );
     }
 }
 
@@ -2396,7 +2860,8 @@ fn test_modal_responsive_window_sizing_and_clamping() {
     };
 
     // Default window 780x600:
-    let (sm_w_def, sm_h_def, sm_sh_def, sm_min_def, sm_max_def) = compute_settings_modal(780.0, 600.0);
+    let (sm_w_def, sm_h_def, sm_sh_def, sm_min_def, sm_max_def) =
+        compute_settings_modal(780.0, 600.0);
     assert_eq!(sm_w_def, 740.0); // (740.0).clamp(420, 780) = 740.0
     assert_eq!(sm_h_def, 560.0); // (560.0).clamp(360, 680) = 560.0
     assert_eq!(sm_sh_def, 380.0); // 560 - 180 = 380.0
@@ -2420,16 +2885,18 @@ fn test_modal_responsive_window_sizing_and_clamping() {
     //   modal_h = (screen.height() - 40.0).clamp(300.0, 480.0);
     //   min_size = Vec2::new(320.0, 240.0);
     //   avail_scroll_h = (ui.available_height() - 48.0).max(100.0);
-    let compute_power_modal = |screen_w: f32, screen_h: f32, avail_inner_h: f32| -> (f32, f32, f32, Vec2, Vec2) {
-        let modal_w = (screen_w - 40.0).clamp(360.0, 540.0);
-        let modal_h = (screen_h - 40.0).clamp(300.0, 480.0);
-        let scroll_h = (avail_inner_h - 48.0).max(100.0);
-        let min_sz = Vec2::new(320.0, 240.0);
-        let max_sz = Vec2::new((screen_w - 16.0).max(0.0), (screen_h - 16.0).max(0.0));
-        (modal_w, modal_h, scroll_h, min_sz, max_sz)
-    };
+    let compute_power_modal =
+        |screen_w: f32, screen_h: f32, avail_inner_h: f32| -> (f32, f32, f32, Vec2, Vec2) {
+            let modal_w = (screen_w - 40.0).clamp(360.0, 540.0);
+            let modal_h = (screen_h - 40.0).clamp(300.0, 480.0);
+            let scroll_h = (avail_inner_h - 48.0).max(100.0);
+            let min_sz = Vec2::new(320.0, 240.0);
+            let max_sz = Vec2::new((screen_w - 16.0).max(0.0), (screen_h - 16.0).max(0.0));
+            (modal_w, modal_h, scroll_h, min_sz, max_sz)
+        };
 
-    let (pm_w_def, pm_h_def, pm_sh_def, pm_min_def, pm_max_def) = compute_power_modal(780.0, 600.0, 400.0);
+    let (pm_w_def, pm_h_def, pm_sh_def, pm_min_def, pm_max_def) =
+        compute_power_modal(780.0, 600.0, 400.0);
     assert_eq!(pm_w_def, 540.0); // (740.0).clamp(360, 540) = 540.0
     assert_eq!(pm_h_def, 480.0); // (560.0).clamp(300, 480) = 480.0
     assert_eq!(pm_sh_def, 352.0); // 400 - 48 = 352.0 >= 100.0
@@ -2446,15 +2913,17 @@ fn test_modal_responsive_window_sizing_and_clamping() {
     //   modal_h = (screen.height() - 40.0).clamp(300.0, 580.0);
     //   min_size = Vec2::new(360.0, 240.0);
     //   avail_editor_h = (ui.available_height() - 54.0).max(120.0);
-    let compute_json_modal = |screen_w: f32, screen_h: f32, avail_inner_h: f32| -> (f32, f32, f32, Vec2, Vec2) {
-        let modal_w = (screen_w - 40.0).clamp(420.0, 780.0);
-        let modal_h = (screen_h - 40.0).clamp(300.0, 580.0);
-        let editor_h = (avail_inner_h - 54.0).max(120.0);
-        let min_sz = Vec2::new(360.0, 240.0);
-        let max_sz = Vec2::new((screen_w - 16.0).max(0.0), (screen_h - 16.0).max(0.0));
-        (modal_w, modal_h, editor_h, min_sz, max_sz)
-    };
-    let (jm_w_def, jm_h_def, jm_eh_def, jm_min_def, jm_max_def) = compute_json_modal(780.0, 600.0, 450.0);
+    let compute_json_modal =
+        |screen_w: f32, screen_h: f32, avail_inner_h: f32| -> (f32, f32, f32, Vec2, Vec2) {
+            let modal_w = (screen_w - 40.0).clamp(420.0, 780.0);
+            let modal_h = (screen_h - 40.0).clamp(300.0, 580.0);
+            let editor_h = (avail_inner_h - 54.0).max(120.0);
+            let min_sz = Vec2::new(360.0, 240.0);
+            let max_sz = Vec2::new((screen_w - 16.0).max(0.0), (screen_h - 16.0).max(0.0));
+            (modal_w, modal_h, editor_h, min_sz, max_sz)
+        };
+    let (jm_w_def, jm_h_def, jm_eh_def, jm_min_def, jm_max_def) =
+        compute_json_modal(780.0, 600.0, 450.0);
     assert_eq!(jm_w_def, 740.0);
     assert_eq!(jm_h_def, 560.0);
     assert_eq!(jm_eh_def, 396.0); // 450 - 54 = 396.0
@@ -2501,10 +2970,10 @@ fn test_multiresolution_layout_sweep_stress_testing() {
     let test_resolutions: Vec<(f32, f32)> = vec![
         (320.0, 240.0),
         (480.0, 320.0),
-        (520.0, 360.0),  // Minimum supported inner window size
+        (520.0, 360.0), // Minimum supported inner window size
         (640.0, 480.0),
         (700.0, 500.0),
-        (800.0, 600.0),  // Default initial inner window size
+        (800.0, 600.0), // Default initial inner window size
         (1024.0, 768.0),
         (1280.0, 720.0), // 720p HD
         (1366.0, 768.0),
@@ -2572,28 +3041,28 @@ fn test_multiresolution_layout_sweep_stress_testing() {
         let sm_w = (w - 40.0).clamp(420.0, 780.0);
         let sm_h = (h - 40.0).clamp(360.0, 680.0);
         let sm_sh = (sm_h - 180.0).max(140.0);
-        assert!(sm_w >= 420.0 && sm_w <= 780.0);
-        assert!(sm_h >= 360.0 && sm_h <= 680.0);
+        assert!((420.0..=780.0).contains(&sm_w));
+        assert!((360.0..=680.0).contains(&sm_h));
         assert!(sm_sh >= 140.0);
 
         let pm_w = (w - 40.0).clamp(360.0, 540.0);
         let pm_h = (h - 40.0).clamp(300.0, 480.0);
         let pm_sh = (pm_h - 48.0).max(100.0);
-        assert!(pm_w >= 360.0 && pm_w <= 540.0);
-        assert!(pm_h >= 300.0 && pm_h <= 480.0);
+        assert!((360.0..=540.0).contains(&pm_w));
+        assert!((300.0..=480.0).contains(&pm_h));
         assert!(pm_sh >= 100.0);
 
         let jm_w = (w - 40.0).clamp(420.0, 780.0);
         let jm_h = (h - 40.0).clamp(300.0, 580.0);
         let jm_eh = (jm_h - 54.0).max(120.0);
-        assert!(jm_w >= 420.0 && jm_w <= 780.0);
-        assert!(jm_h >= 300.0 && jm_h <= 580.0);
+        assert!((420.0..=780.0).contains(&jm_w));
+        assert!((300.0..=580.0).contains(&jm_h));
         assert!(jm_eh >= 120.0);
 
         let npm_w = (w - 40.0).clamp(320.0, 420.0);
         let npm_h = (h - 40.0).clamp(160.0, 220.0);
-        assert!(npm_w >= 320.0 && npm_w <= 420.0);
-        assert!(npm_h >= 160.0 && npm_h <= 220.0);
+        assert!((320.0..=420.0).contains(&npm_w));
+        assert!((160.0..=220.0).contains(&npm_h));
     }
 }
 
@@ -2602,12 +3071,21 @@ fn test_default_native_options_and_viewport_optimization() {
     let options = default_native_options();
 
     // 1. Verify Viewport Dimensions
-    assert_eq!(options.viewport.inner_size, Some(eframe::egui::Vec2::new(800.0, 600.0)));
-    assert_eq!(options.viewport.min_inner_size, Some(eframe::egui::Vec2::new(520.0, 360.0)));
+    assert_eq!(
+        options.viewport.inner_size,
+        Some(eframe::egui::Vec2::new(800.0, 600.0))
+    );
+    assert_eq!(
+        options.viewport.min_inner_size,
+        Some(eframe::egui::Vec2::new(520.0, 360.0))
+    );
 
     // 2. Verify Viewport Window Characteristics
     assert_eq!(options.viewport.title, Some("Wake Workstation".to_string()));
-    assert_eq!(options.viewport.app_id, Some("wake-workstation".to_string()));
+    assert_eq!(
+        options.viewport.app_id,
+        Some("wake-workstation".to_string())
+    );
     assert_eq!(options.viewport.resizable, Some(true));
     assert_eq!(options.viewport.active, Some(true));
     assert_eq!(options.viewport.decorations, Some(true));
@@ -2618,15 +3096,39 @@ fn test_default_native_options_and_viewport_optimization() {
     assert_eq!(options.viewport.drag_and_drop, Some(false));
 
     // 3. Verify eframe Native Rendering & Scaling Options
-    assert!(options.vsync, "VSync should be enabled to eliminate tearing during window resize");
-    assert_eq!(options.multisampling, 0, "Multisampling should be disabled (0) for 2D UI efficiency");
-    assert_eq!(options.depth_buffer, 0, "Depth buffer should be 0 for lightweight 2D framebuffers");
-    assert_eq!(options.stencil_buffer, 0, "Stencil buffer should be 0 for lightweight 2D framebuffers");
-    assert_eq!(options.hardware_acceleration, eframe::HardwareAcceleration::Preferred);
+    assert!(
+        options.vsync,
+        "VSync should be enabled to eliminate tearing during window resize"
+    );
+    assert_eq!(
+        options.multisampling, 0,
+        "Multisampling should be disabled (0) for 2D UI efficiency"
+    );
+    assert_eq!(
+        options.depth_buffer, 0,
+        "Depth buffer should be 0 for lightweight 2D framebuffers"
+    );
+    assert_eq!(
+        options.stencil_buffer, 0,
+        "Stencil buffer should be 0 for lightweight 2D framebuffers"
+    );
+    assert_eq!(
+        options.hardware_acceleration,
+        eframe::HardwareAcceleration::Preferred
+    );
     assert_eq!(options.renderer, eframe::Renderer::Glow);
-    assert!(options.centered, "Window should be centered on active display on launch");
-    assert!(!options.persist_window, "Persist window should be disabled so initial size defaults cleanly to 800x600");
-    assert!(options.dithering, "Dithering should be enabled for smooth color gradients");
+    assert!(
+        options.centered,
+        "Window should be centered on active display on launch"
+    );
+    assert!(
+        !options.persist_window,
+        "Persist window should be disabled so initial size defaults cleanly to 800x600"
+    );
+    assert!(
+        options.dithering,
+        "Dithering should be enabled for smooth color gradients"
+    );
 }
 
 #[test]
@@ -2725,7 +3227,9 @@ fn test_normalize_mac_address_strict_and_standardized() {
 
 #[test]
 fn test_validate_settings_port_ranges_and_interval_bounds() {
-    use crate::config::{validate_settings, HostProfile, MAX_ALLOWED_INTERVAL_SECONDS, MAX_ALLOWED_WAIT_SECONDS};
+    use crate::config::{
+        validate_settings, HostProfile, MAX_ALLOWED_INTERVAL_SECONDS, MAX_ALLOWED_WAIT_SECONDS,
+    };
 
     let mut profile = HostProfile::default();
     assert!(validate_settings(&profile).is_ok());
@@ -2762,10 +3266,11 @@ fn test_validate_settings_port_ranges_and_interval_bounds() {
 fn test_pi_gateway_contract_validation() {
     use crate::config::{validate_settings, HostProfile};
 
-    let mut profile = HostProfile::default();
-    // Empty pi_host is allowed (direct WOL mode)
-    profile.pi_host = String::new();
-    profile.pi_user = String::new();
+    let mut profile = HostProfile {
+        pi_host: String::new(),
+        pi_user: String::new(),
+        ..HostProfile::default()
+    };
     assert!(validate_settings(&profile).is_ok());
 
     // When pi_host is specified, pi_user MUST NOT be empty
@@ -2799,7 +3304,9 @@ fn test_import_config_with_warnings_and_salvage_diagnostics() {
     assert!(cfg.profiles.contains_key("gaming"));
     assert!(!cfg.profiles.contains_key("broken"));
     assert!(!warnings.is_empty());
-    assert!(warnings.iter().any(|w| w.contains("Dropped invalid profile 'broken'")));
+    assert!(warnings
+        .iter()
+        .any(|w| w.contains("Dropped invalid profile 'broken'")));
 }
 
 #[test]
@@ -2826,5 +3333,3 @@ fn test_config_error_display_and_traits() {
     let str_converted: String = err_empty.into();
     assert_eq!(str_converted, "Target IP cannot be empty");
 }
-
-

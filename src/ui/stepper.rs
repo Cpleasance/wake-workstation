@@ -10,25 +10,37 @@ impl WakeApp {
                 Stage::Wol,
                 "1. WOL BROADCAST".to_string(),
                 "Magic packet payload".to_string(),
-                format!("Broadcast magic packet to MAC {}", self.current_profile.mac_address),
+                format!(
+                    "Broadcast magic packet to MAC {}",
+                    self.current_profile.mac_address
+                ),
             ),
             (
                 Stage::Ping,
                 "2. ICMP PING".to_string(),
                 "Host reachability check".to_string(),
-                format!("ICMP echo request to target IP {}", self.current_profile.thinkstation_ip),
+                format!(
+                    "ICMP echo request to target IP {}",
+                    self.current_profile.thinkstation_ip
+                ),
             ),
             (
                 Stage::Ssh,
                 "3. SSH DAEMON".to_string(),
                 format!("Port {} readiness", self.current_profile.ssh_port),
-                format!("TCP handshake check on port {}", self.current_profile.ssh_port),
+                format!(
+                    "TCP handshake check on port {}",
+                    self.current_profile.ssh_port
+                ),
             ),
             (
                 Stage::Sunshine,
                 "4. SUNSHINE STREAM".to_string(),
                 format!("Streaming port {}", self.current_profile.sunshine_port),
-                format!("Sunshine service check on port {}", self.current_profile.sunshine_port),
+                format!(
+                    "Sunshine service check on port {}",
+                    self.current_profile.sunshine_port
+                ),
             ),
         ];
 
@@ -42,10 +54,20 @@ impl WakeApp {
                 } else if Self::stage_order(stalled) > Self::stage_order(stage) {
                     (colors::OK_BG, colors::OK, colors::TEXT, "\u{2713}")
                 } else {
-                    (colors::CARD_BG, colors::BORDER, colors::TEXT_DIM, "\u{25cb}")
+                    (
+                        colors::CARD_BG,
+                        colors::BORDER,
+                        colors::TEXT_DIM,
+                        "\u{25cb}",
+                    )
                 }
             } else if cur_stage == Stage::Standby {
-                (colors::CARD_BG, colors::BORDER, colors::TEXT_DIM, "\u{25cb}")
+                (
+                    colors::CARD_BG,
+                    colors::BORDER,
+                    colors::TEXT_DIM,
+                    "\u{25cb}",
+                )
             } else if cur_stage == Stage::Ready {
                 (colors::OK_BG, colors::OK, colors::TEXT, "\u{2713}")
             } else if cur_stage == stage {
@@ -53,51 +75,52 @@ impl WakeApp {
             } else if Self::stage_order(cur_stage) > Self::stage_order(stage) {
                 (colors::OK_BG, colors::OK, colors::TEXT, "\u{2713}")
             } else {
-                (colors::CARD_BG, colors::BORDER, colors::TEXT_DIM, "\u{25cb}")
+                (
+                    colors::CARD_BG,
+                    colors::BORDER,
+                    colors::TEXT_DIM,
+                    "\u{25cb}",
+                )
             }
         };
 
-        let render_card = |ui: &mut egui::Ui,
-                           card_width: f32,
-                           label: &str,
-                           sub: &str,
-                           tt: &str,
-                           stage: Stage| {
-            let (bg, border, fg, badge) = style_for(stage);
-            let margin = Vec2::new(8.0, 6.0);
-            let inner_w = (card_width - 2.0 * margin.x).max(10.0);
-            Frame::none()
-                .fill(bg)
-                .stroke(Stroke::new(1.0_f32, border))
-                .rounding(Rounding::same(metrics::ROUNDING_MD))
-                .inner_margin(margin)
-                .show(ui, |ui| {
-                    ui.set_min_width(inner_w);
-                    ui.set_max_width(inner_w);
-                    ui.vertical_centered(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(format!("{} {}", badge, label))
-                                    .size(metrics::FS_LABEL)
-                                    .strong()
-                                    .color(fg),
-                            )
-                            .wrap_mode(egui::TextWrapMode::Wrap),
-                        );
-                        ui.add_space(2.0);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(sub)
-                                    .size(metrics::FS_SMALL)
-                                    .color(colors::TEXT_MUTED),
-                            )
-                            .wrap_mode(egui::TextWrapMode::Wrap),
-                        );
-                    });
-                })
-                .response
-                .on_hover_text(tt);
-        };
+        let render_card =
+            |ui: &mut egui::Ui, card_width: f32, label: &str, sub: &str, tt: &str, stage: Stage| {
+                let (bg, border, fg, badge) = style_for(stage);
+                let margin = Vec2::new(8.0, 6.0);
+                let inner_w = (card_width - 2.0 * margin.x).max(10.0);
+                Frame::none()
+                    .fill(bg)
+                    .stroke(Stroke::new(1.0_f32, border))
+                    .rounding(Rounding::same(metrics::ROUNDING_MD))
+                    .inner_margin(margin)
+                    .show(ui, |ui| {
+                        ui.set_min_width(inner_w);
+                        ui.set_max_width(inner_w);
+                        ui.vertical_centered(|ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(format!("{} {}", badge, label))
+                                        .size(metrics::FS_LABEL)
+                                        .strong()
+                                        .color(fg),
+                                )
+                                .wrap_mode(egui::TextWrapMode::Wrap),
+                            );
+                            ui.add_space(2.0);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(sub)
+                                        .size(metrics::FS_SMALL)
+                                        .color(colors::TEXT_MUTED),
+                                )
+                                .wrap_mode(egui::TextWrapMode::Wrap),
+                            );
+                        });
+                    })
+                    .response
+                    .on_hover_text(tt);
+            };
 
         panel_frame().show(ui, |ui| {
             let gap = metrics::SPACE_XS;

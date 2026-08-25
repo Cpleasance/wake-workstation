@@ -9,10 +9,10 @@ impl WakeApp {
         panel_frame().show(ui, |ui| {
             let start_y = ui.cursor().min.y;
             let total_count = self.pipeline.logs.len();
-            let filtered_count = self.pipeline.filtered_logs(
-                self.console_level_filter,
-                &self.console_search_query,
-            ).len();
+            let filtered_count = self
+                .pipeline
+                .filtered_logs(self.console_level_filter, &self.console_search_query)
+                .len();
 
             let avail_width = ui.available_width();
             const CONSOLE_TOOLBAR_BREAKPOINT: f32 = 680.0;
@@ -21,13 +21,14 @@ impl WakeApp {
                 // Wide toolbar: Left cluster (Title + Badge + Filter Tabs), Right cluster (Auto-scroll, Copy, Clear, Collapse)
                 ui.horizontal(|ui| {
                     let icon = if self.console_collapsed { "▶" } else { "▼" };
-                    let toggle_title = ui.button(
-                        RichText::new(format!("{} LIVE ACTIVITY LOG", icon))
-                            .size(metrics::FS_LABEL)
-                            .strong()
-                            .color(colors::TEXT_MUTED),
-                    )
-                    .on_hover_text("Toggle collapsible terminal log panel (Shortcut: Ctrl+T)");
+                    let toggle_title = ui
+                        .button(
+                            RichText::new(format!("{} LIVE ACTIVITY LOG", icon))
+                                .size(metrics::FS_LABEL)
+                                .strong()
+                                .color(colors::TEXT_MUTED),
+                        )
+                        .on_hover_text("Toggle collapsible terminal log panel (Shortcut: Ctrl+T)");
 
                     if toggle_title.clicked() {
                         self.console_collapsed = !self.console_collapsed;
@@ -59,7 +60,11 @@ impl WakeApp {
                             "Collapse [Ctrl+T]"
                         };
                         if ui
-                            .button(RichText::new(collapse_label).size(metrics::FS_SMALL).color(colors::ACCENT))
+                            .button(
+                                RichText::new(collapse_label)
+                                    .size(metrics::FS_SMALL)
+                                    .color(colors::ACCENT),
+                            )
                             .on_hover_text("Toggle activity log visibility (Shortcut: Ctrl+T)")
                             .clicked()
                         {
@@ -68,7 +73,11 @@ impl WakeApp {
 
                         if !self.console_collapsed {
                             let clear_btn = ui
-                                .button(RichText::new("Clear").size(metrics::FS_LABEL).color(colors::TEXT_DIM))
+                                .button(
+                                    RichText::new("Clear")
+                                        .size(metrics::FS_LABEL)
+                                        .color(colors::TEXT_DIM),
+                                )
                                 .on_hover_text("Clear all activity logs (Shortcut: Ctrl+L)");
                             if clear_btn.clicked() {
                                 self.pipeline.clear_logs();
@@ -76,17 +85,24 @@ impl WakeApp {
                             }
 
                             let copy_btn = ui
-                                .button(RichText::new("Copy").size(metrics::FS_LABEL).color(colors::TEXT_DIM))
+                                .button(
+                                    RichText::new("Copy")
+                                        .size(metrics::FS_LABEL)
+                                        .color(colors::TEXT_DIM),
+                                )
                                 .on_hover_text("Copy formatted activity logs to system clipboard");
                             if copy_btn.clicked() {
                                 let text = self.pipeline.formatted_logs_text();
                                 ctx.output_mut(|o| o.copied_text = text);
-                                self.pipeline.log(LogLevel::Info, "Logs copied to system clipboard");
+                                self.pipeline
+                                    .log(LogLevel::Info, "Logs copied to system clipboard");
                                 self.add_toast(Toast::info("Logs copied to clipboard"));
                             }
 
                             ui.checkbox(&mut self.console_auto_scroll, "Auto-scroll")
-                                .on_hover_text("Automatically scroll console to newest log entries");
+                                .on_hover_text(
+                                    "Automatically scroll console to newest log entries",
+                                );
                         }
                     });
                 });
@@ -96,13 +112,14 @@ impl WakeApp {
                     ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
 
                     let icon = if self.console_collapsed { "▶" } else { "▼" };
-                    let toggle_title = ui.button(
-                        RichText::new(format!("{} LIVE ACTIVITY LOG", icon))
-                            .size(metrics::FS_LABEL)
-                            .strong()
-                            .color(colors::TEXT_MUTED),
-                    )
-                    .on_hover_text("Toggle collapsible terminal log panel (Shortcut: Ctrl+T)");
+                    let toggle_title = ui
+                        .button(
+                            RichText::new(format!("{} LIVE ACTIVITY LOG", icon))
+                                .size(metrics::FS_LABEL)
+                                .strong()
+                                .color(colors::TEXT_MUTED),
+                        )
+                        .on_hover_text("Toggle collapsible terminal log panel (Shortcut: Ctrl+T)");
 
                     if toggle_title.clicked() {
                         self.console_collapsed = !self.console_collapsed;
@@ -126,7 +143,11 @@ impl WakeApp {
                         "Collapse [Ctrl+T]"
                     };
                     if ui
-                        .button(RichText::new(collapse_label).size(metrics::FS_SMALL).color(colors::ACCENT))
+                        .button(
+                            RichText::new(collapse_label)
+                                .size(metrics::FS_SMALL)
+                                .color(colors::ACCENT),
+                        )
                         .on_hover_text("Toggle activity log visibility (Shortcut: Ctrl+T)")
                         .clicked()
                     {
@@ -135,17 +156,26 @@ impl WakeApp {
 
                     if !self.console_collapsed {
                         let copy_btn = ui
-                            .button(RichText::new("Copy").size(metrics::FS_LABEL).color(colors::TEXT_DIM))
+                            .button(
+                                RichText::new("Copy")
+                                    .size(metrics::FS_LABEL)
+                                    .color(colors::TEXT_DIM),
+                            )
                             .on_hover_text("Copy formatted activity logs to system clipboard");
                         if copy_btn.clicked() {
                             let text = self.pipeline.formatted_logs_text();
                             ctx.output_mut(|o| o.copied_text = text);
-                            self.pipeline.log(LogLevel::Info, "Logs copied to system clipboard");
+                            self.pipeline
+                                .log(LogLevel::Info, "Logs copied to system clipboard");
                             self.add_toast(Toast::info("Logs copied to clipboard"));
                         }
 
                         let clear_btn = ui
-                            .button(RichText::new("Clear").size(metrics::FS_LABEL).color(colors::TEXT_DIM))
+                            .button(
+                                RichText::new("Clear")
+                                    .size(metrics::FS_LABEL)
+                                    .color(colors::TEXT_DIM),
+                            )
                             .on_hover_text("Clear all activity logs (Shortcut: Ctrl+L)");
                         if clear_btn.clicked() {
                             self.pipeline.clear_logs();
@@ -171,7 +201,11 @@ impl WakeApp {
 
                 // Responsive Search input field
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Search:").size(metrics::FS_SMALL).color(colors::TEXT_DIM));
+                    ui.label(
+                        RichText::new("Search:")
+                            .size(metrics::FS_SMALL)
+                            .color(colors::TEXT_DIM),
+                    );
                     let search_w = (ui.available_width() - 30.0).clamp(120.0, 320.0);
                     ui.add(
                         egui::TextEdit::singleline(&mut self.console_search_query)
@@ -186,7 +220,8 @@ impl WakeApp {
                 let header_consumed = (ui.cursor().min.y - start_y).max(0.0);
                 let panel_margin_y = 2.0 * metrics::SPACE_MD;
                 let inset_margin_y = 16.0;
-                let inner_height = (height - panel_margin_y - header_consumed - inset_margin_y).max(60.0);
+                let inner_height =
+                    (height - panel_margin_y - header_consumed - inset_margin_y).max(60.0);
 
                 inset_frame().show(ui, |ui| {
                     let mut scroll = egui::ScrollArea::vertical()
@@ -199,10 +234,9 @@ impl WakeApp {
 
                     scroll.show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
-                        let filtered_entries = self.pipeline.filtered_logs(
-                            self.console_level_filter,
-                            &self.console_search_query,
-                        );
+                        let filtered_entries = self
+                            .pipeline
+                            .filtered_logs(self.console_level_filter, &self.console_search_query);
                         for entry in filtered_entries {
                             let (tag_color, tag_bg) = match entry.level {
                                 LogLevel::Info => (colors::TEXT_MUTED, colors::CARD_BG),

@@ -37,6 +37,8 @@ pub enum ReachabilityState {
     },
 }
 
+pub type ReachabilityPayload = (String, bool, Option<f32>, u16, bool);
+
 pub struct WakeApp {
     pub app_config: AppConfig,
     pub current_profile: HostProfile,
@@ -56,7 +58,7 @@ pub struct WakeApp {
 
     // Reachability test state
     pub reachability_state: ReachabilityState,
-    pub reachability_rx: Option<Receiver<(String, bool, Option<f32>, u16, bool)>>,
+    pub reachability_rx: Option<Receiver<ReachabilityPayload>>,
 
     // Toast notifications
     pub toasts: Vec<Toast>,
@@ -234,7 +236,10 @@ impl WakeApp {
 
         if confirm_power_action {
             if let Some((action_code, _action_title)) = self.pending_power_action {
-                match self.pipeline.trigger_power_action(&self.current_profile, action_code) {
+                match self
+                    .pipeline
+                    .trigger_power_action(&self.current_profile, action_code)
+                {
                     Ok(m) => {
                         self.power_status = Some(m.clone());
                         self.pending_power_action = None;
@@ -292,8 +297,10 @@ impl WakeApp {
         }
 
         if launch_stream {
-            self.pipeline
-                .log(LogLevel::Action, "Manual Moonlight launch requested (Space/Enter)");
+            self.pipeline.log(
+                LogLevel::Action,
+                "Manual Moonlight launch requested (Space/Enter)",
+            );
             if launch_moonlight() {
                 self.pipeline
                     .log(LogLevel::Ok, "Moonlight streaming client opened");
@@ -510,11 +517,13 @@ impl eframe::App for WakeApp {
                 ctx.request_repaint_after(Duration::from_millis(1500));
             }
             Stage::Ready => {
-                self.pipeline.tick(&self.current_profile, self.auto_launch_moonlight);
+                self.pipeline
+                    .tick(&self.current_profile, self.auto_launch_moonlight);
                 ctx.request_repaint_after(Duration::from_millis(600));
             }
             _ => {
-                self.pipeline.tick(&self.current_profile, self.auto_launch_moonlight);
+                self.pipeline
+                    .tick(&self.current_profile, self.auto_launch_moonlight);
                 ctx.request_repaint_after(Duration::from_millis(200));
             }
         }
@@ -526,12 +535,16 @@ impl eframe::App for WakeApp {
         // TopBottomPanel::bottom guarantees the bottom Action Bar is NEVER clipped or squeezed
         // off-screen even if the user resizes the window vertically down to minimum height.
         egui::TopBottomPanel::bottom("action_bar_panel")
-            .frame(egui::Frame::none().fill(colors::BG).inner_margin(egui::Margin {
-                left: metrics::OUTER_MARGIN,
-                right: metrics::OUTER_MARGIN,
-                top: metrics::SPACE_SM,
-                bottom: metrics::OUTER_MARGIN,
-            }))
+            .frame(
+                egui::Frame::none()
+                    .fill(colors::BG)
+                    .inner_margin(egui::Margin {
+                        left: metrics::OUTER_MARGIN,
+                        right: metrics::OUTER_MARGIN,
+                        top: metrics::SPACE_SM,
+                        bottom: metrics::OUTER_MARGIN,
+                    }),
+            )
             .show(ctx, |ui| {
                 let avail_width = ui.available_width();
                 let content_width = avail_width.min(metrics::MAX_CONTENT_WIDTH);
@@ -552,12 +565,16 @@ impl eframe::App for WakeApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(colors::BG).inner_margin(egui::Margin {
-                left: metrics::OUTER_MARGIN,
-                right: metrics::OUTER_MARGIN,
-                top: metrics::OUTER_MARGIN,
-                bottom: metrics::SPACE_XS,
-            }))
+            .frame(
+                egui::Frame::none()
+                    .fill(colors::BG)
+                    .inner_margin(egui::Margin {
+                        left: metrics::OUTER_MARGIN,
+                        right: metrics::OUTER_MARGIN,
+                        top: metrics::OUTER_MARGIN,
+                        bottom: metrics::SPACE_XS,
+                    }),
+            )
             .show(ctx, |ui| {
                 let avail_width = ui.available_width();
                 let content_width = avail_width.min(metrics::MAX_CONTENT_WIDTH);

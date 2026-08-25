@@ -69,7 +69,10 @@ impl WakeApp {
                     }
                     ui.separator();
                     if ui
-                        .selectable_label(false, RichText::new("+ Add New Profile...").color(colors::OK))
+                        .selectable_label(
+                            false,
+                            RichText::new("+ Add New Profile...").color(colors::OK),
+                        )
                         .clicked()
                     {
                         trigger_create = true;
@@ -77,7 +80,8 @@ impl WakeApp {
                 });
 
             if trigger_create {
-                self.new_profile_name_input = format!("profile-{}", self.app_config.profiles.len() + 1);
+                self.new_profile_name_input =
+                    format!("profile-{}", self.app_config.profiles.len() + 1);
                 self.show_new_profile_dialog = true;
             } else if selected_profile != current_selected {
                 // Profiles are loaded verbatim from disk (or hand-edited/imported
@@ -124,8 +128,7 @@ impl WakeApp {
             ui.label(
                 RichText::new(format!(
                     "{}@{}",
-                    self.current_profile.thinkstation_user,
-                    self.current_profile.thinkstation_ip
+                    self.current_profile.thinkstation_user, self.current_profile.thinkstation_ip
                 ))
                 .size(metrics::FS_LABEL)
                 .monospace()
@@ -141,7 +144,9 @@ impl WakeApp {
             )
             .on_hover_text("Target network card MAC address for Wake-on-LAN");
 
-            let mode_desc = if self.current_profile.direct_wol || self.current_profile.pi_host.trim().is_empty() {
+            let mode_desc = if self.current_profile.direct_wol
+                || self.current_profile.pi_host.trim().is_empty()
+            {
                 "Direct local WOL".to_string()
             } else {
                 format!("via gateway {}", self.current_profile.pi_host)
@@ -159,14 +164,23 @@ impl WakeApp {
     fn render_header_status_cluster(&mut self, ui: &mut egui::Ui, is_right_aligned: bool) {
         let max_w = self.current_profile.max_wait_seconds;
         let elapsed = self.pipeline.elapsed_secs;
-        let timer_text =
-            format!("{:02}:{:02} / {:02}:{:02}", elapsed / 60, elapsed % 60, max_w / 60, max_w % 60);
+        let timer_text = format!(
+            "{:02}:{:02} / {:02}:{:02}",
+            elapsed / 60,
+            elapsed % 60,
+            max_w / 60,
+            max_w % 60
+        );
 
         let (lat_color, lat_dot, lat_desc) = match self.pipeline.last_latency {
             Some(lat) if lat < 20.0 => (colors::OK, "\u{25cf}", "Excellent response time"),
             Some(lat) if lat < 100.0 => (colors::WARN, "\u{25cf}", "Moderate latency"),
             Some(_) => (colors::ERR, "\u{25cf}", "High response latency"),
-            None => (colors::TEXT_DIM, "\u{25cb}", "Host reachability offline or unverified"),
+            None => (
+                colors::TEXT_DIM,
+                "\u{25cb}",
+                "Host reachability offline or unverified",
+            ),
         };
 
         let render_chip = |ui: &mut egui::Ui| {
@@ -182,13 +196,24 @@ impl WakeApp {
                     .on_hover_text("Elapsed execution time / Maximum wait timeout");
 
                     ui.add_space(metrics::SPACE_SM);
-                    ui.label(RichText::new(lat_dot).size(metrics::FS_SMALL).color(lat_color));
                     ui.label(
-                        RichText::new(format!("{} RTT", format_latency(self.pipeline.last_latency)))
-                            .size(metrics::FS_LABEL)
-                            .monospace()
-                            .strong()
-                            .color(if self.pipeline.last_latency.is_some() { colors::OK } else { colors::TEXT_DIM }),
+                        RichText::new(lat_dot)
+                            .size(metrics::FS_SMALL)
+                            .color(lat_color),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "{} RTT",
+                            format_latency(self.pipeline.last_latency)
+                        ))
+                        .size(metrics::FS_LABEL)
+                        .monospace()
+                        .strong()
+                        .color(if self.pipeline.last_latency.is_some() {
+                            colors::OK
+                        } else {
+                            colors::TEXT_DIM
+                        }),
                     )
                     .on_hover_text(lat_desc);
                 });
@@ -201,7 +226,9 @@ impl WakeApp {
             if settings_btn.clicked() {
                 *open = true;
             }
-            settings_btn.on_hover_text("Open settings & profile manager (Shortcut: Ctrl+S to save in settings)");
+            settings_btn.on_hover_text(
+                "Open settings & profile manager (Shortcut: Ctrl+S to save in settings)",
+            );
         };
 
         if is_right_aligned {

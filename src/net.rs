@@ -279,9 +279,8 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
     }
 
     // Windows / localized sub-millisecond format "time<1ms", "zeit<1ms", "temps<1ms", "время<1мс", "时间<1ms", etc.
-    let re_sub_ms = RE_SUB_MS.get_or_init(|| {
-        Regex::new(r"(?i)<\s*1\s*(?:ms|мс)").expect("valid ping sub-ms regex")
-    });
+    let re_sub_ms = RE_SUB_MS
+        .get_or_init(|| Regex::new(r"(?i)<\s*1\s*(?:ms|мс)").expect("valid ping sub-ms regex"));
     if re_sub_ms.is_match(output) {
         return Some(0.5);
     }
@@ -448,8 +447,7 @@ pub fn check_ping(host: &str, timeout_secs: u64) -> (bool, Option<f32>) {
                 || combined_lower.contains("ответ от")
                 || combined_lower.contains("来自");
 
-            let ok = !is_failed
-                && (latency.is_some() || output.status.success() || reply_found);
+            let ok = !is_failed && (latency.is_some() || output.status.success() || reply_found);
             (ok, latency)
         }
         Err(_) => (false, None),
@@ -590,8 +588,8 @@ pub fn get_windows_moonlight_exe_paths() -> Vec<std::path::PathBuf> {
 
     let program_files =
         std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
-    let program_files_x86 =
-        std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+    let program_files_x86 = std::env::var("ProgramFiles(x86)")
+        .unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
     let program_w6432 = std::env::var("ProgramW6432").ok();
     let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let app_data = std::env::var("APPDATA").unwrap_or_default();
@@ -791,7 +789,9 @@ pub fn get_windows_moonlight_lnk_paths() -> Vec<std::path::PathBuf> {
             .join("Desktop")
             .join("Moonlight Game Streaming.lnk"),
     );
-    candidates.push(std::path::PathBuf::from("C:\\Users\\Public\\Desktop\\Moonlight.lnk"));
+    candidates.push(std::path::PathBuf::from(
+        "C:\\Users\\Public\\Desktop\\Moonlight.lnk",
+    ));
     candidates.push(std::path::PathBuf::from(
         "C:\\Users\\Public\\Desktop\\Moonlight Game Streaming.lnk",
     ));

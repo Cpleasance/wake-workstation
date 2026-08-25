@@ -147,19 +147,32 @@ impl WakeApp {
                 let avail_w = ui.available_width();
                 if avail_w >= 540.0 {
                     ui.horizontal(|ui| {
-                        let exp_btn = flow_button(ui, "📤 Export Config (JSON)", colors::BTN_BG, colors::TEXT);
+                        let exp_btn = flow_button(
+                            ui,
+                            "📤 Export Config (JSON)",
+                            colors::BTN_BG,
+                            colors::TEXT,
+                        );
                         if exp_btn.clicked() {
                             self.export_config_json(ctx);
                         }
-                        exp_btn.on_hover_text("Export entire configuration to JSON string, file & clipboard");
+                        exp_btn.on_hover_text(
+                            "Export entire configuration to JSON string, file & clipboard",
+                        );
 
                         ui.add_space(metrics::SPACE_XS);
 
-                        let imp_btn = flow_button(ui, "📥 Import Config (JSON)", colors::BTN_BG, colors::TEXT);
+                        let imp_btn = flow_button(
+                            ui,
+                            "📥 Import Config (JSON)",
+                            colors::BTN_BG,
+                            colors::TEXT,
+                        );
                         if imp_btn.clicked() {
                             self.open_import_config_dialog(ctx);
                         }
-                        imp_btn.on_hover_text("Import configuration from raw JSON text or clipboard");
+                        imp_btn
+                            .on_hover_text("Import configuration from raw JSON text or clipboard");
 
                         ui.add_space(metrics::SPACE_SM);
 
@@ -173,11 +186,14 @@ impl WakeApp {
                             if save_btn.clicked() {
                                 self.save_settings_from_modal();
                             }
-                            save_btn.on_hover_text("Validate and save current profile settings (Ctrl+S)");
+                            save_btn.on_hover_text(
+                                "Validate and save current profile settings (Ctrl+S)",
+                            );
 
                             ui.add_space(metrics::SPACE_SM);
 
-                            let cancel_btn = flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
+                            let cancel_btn =
+                                flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
                             if cancel_btn.clicked() {
                                 self.show_settings = false;
                             }
@@ -186,7 +202,8 @@ impl WakeApp {
                     });
                 } else {
                     ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
+                        ui.spacing_mut().item_spacing =
+                            Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
                         let save_btn = flow_button(
                             ui,
                             "Save & Apply  [Ctrl+S]",
@@ -196,25 +213,32 @@ impl WakeApp {
                         if save_btn.clicked() {
                             self.save_settings_from_modal();
                         }
-                        save_btn.on_hover_text("Validate and save current profile settings (Ctrl+S)");
+                        save_btn
+                            .on_hover_text("Validate and save current profile settings (Ctrl+S)");
 
-                        let cancel_btn = flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
+                        let cancel_btn =
+                            flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
                         if cancel_btn.clicked() {
                             self.show_settings = false;
                         }
                         cancel_btn.on_hover_text("Discard edits and close modal (Esc)");
 
-                        let exp_btn = flow_button(ui, "📤 Export JSON", colors::BTN_BG, colors::TEXT);
+                        let exp_btn =
+                            flow_button(ui, "📤 Export JSON", colors::BTN_BG, colors::TEXT);
                         if exp_btn.clicked() {
                             self.export_config_json(ctx);
                         }
-                        exp_btn.on_hover_text("Export entire configuration to JSON string, file & clipboard");
+                        exp_btn.on_hover_text(
+                            "Export entire configuration to JSON string, file & clipboard",
+                        );
 
-                        let imp_btn = flow_button(ui, "📥 Import JSON", colors::BTN_BG, colors::TEXT);
+                        let imp_btn =
+                            flow_button(ui, "📥 Import JSON", colors::BTN_BG, colors::TEXT);
                         if imp_btn.clicked() {
                             self.open_import_config_dialog(ctx);
                         }
-                        imp_btn.on_hover_text("Import configuration from raw JSON text or clipboard");
+                        imp_btn
+                            .on_hover_text("Import configuration from raw JSON text or clipboard");
                     });
                 }
             });
@@ -258,30 +282,46 @@ impl WakeApp {
             }
 
             if ui
-                .button(RichText::new("+ New").size(metrics::FS_LABEL).color(colors::OK))
+                .button(
+                    RichText::new("+ New")
+                        .size(metrics::FS_LABEL)
+                        .color(colors::OK),
+                )
                 .on_hover_text("Create a new host configuration profile")
                 .clicked()
             {
-                self.new_profile_name_input = format!("profile-{}", self.app_config.profiles.len() + 1);
+                self.new_profile_name_input =
+                    format!("profile-{}", self.app_config.profiles.len() + 1);
                 self.show_new_profile_dialog = true;
             }
 
             if ui
-                .button(RichText::new("📋 Duplicate").size(metrics::FS_LABEL).color(colors::TEXT))
+                .button(
+                    RichText::new("📋 Duplicate")
+                        .size(metrics::FS_LABEL)
+                        .color(colors::TEXT),
+                )
                 .on_hover_text("Duplicate current profile settings into a new profile")
                 .clicked()
             {
                 match validate_settings(&self.settings_edit_profile) {
                     Ok(()) => {
                         let dup_name = format!("{}-copy", self.settings_profile_name);
-                        self.app_config.set_profile(&dup_name, self.settings_edit_profile.clone());
+                        self.app_config
+                            .set_profile(&dup_name, self.settings_edit_profile.clone());
                         self.settings_profile_name = dup_name.clone();
-                        self.add_toast(Toast::success(format!("Profile duplicated as '{}'", dup_name)));
+                        self.add_toast(Toast::success(format!(
+                            "Profile duplicated as '{}'",
+                            dup_name
+                        )));
                         let _ = save_config_to_path(&self.app_config, &self.config_path);
                     }
                     Err(err) => {
                         self.settings_error = Some(err.clone());
-                        self.add_toast(Toast::error(format!("Cannot duplicate invalid profile: {}", err)));
+                        self.add_toast(Toast::error(format!(
+                            "Cannot duplicate invalid profile: {}",
+                            err
+                        )));
                     }
                 }
             }
@@ -290,11 +330,13 @@ impl WakeApp {
             let del_btn = ui
                 .add_enabled(
                     can_delete,
-                    egui::Button::new(
-                        RichText::new("🗑 Delete")
-                            .size(metrics::FS_LABEL)
-                            .color(if can_delete { colors::ERR } else { colors::TEXT_DIM }),
-                    ),
+                    egui::Button::new(RichText::new("🗑 Delete").size(metrics::FS_LABEL).color(
+                        if can_delete {
+                            colors::ERR
+                        } else {
+                            colors::TEXT_DIM
+                        },
+                    )),
                 )
                 .on_hover_text(if can_delete {
                     "Delete this profile permanently"
@@ -309,12 +351,19 @@ impl WakeApp {
                     self.settings_edit_profile = self.app_config.get_active_profile();
                     self.current_profile = self.settings_edit_profile.clone();
                     let _ = save_config_to_path(&self.app_config, &self.config_path);
-                    self.add_toast(Toast::warning(format!("Profile '{}' deleted!", deleted_name)));
+                    self.add_toast(Toast::warning(format!(
+                        "Profile '{}' deleted!",
+                        deleted_name
+                    )));
                 }
             }
 
             if ui
-                .button(RichText::new("📤 Export JSON").size(metrics::FS_LABEL).color(colors::TEXT))
+                .button(
+                    RichText::new("📤 Export JSON")
+                        .size(metrics::FS_LABEL)
+                        .color(colors::TEXT),
+                )
                 .on_hover_text("Export entire configuration to JSON string, file & clipboard")
                 .clicked()
             {
@@ -322,7 +371,11 @@ impl WakeApp {
             }
 
             if ui
-                .button(RichText::new("📥 Import JSON").size(metrics::FS_LABEL).color(colors::TEXT))
+                .button(
+                    RichText::new("📥 Import JSON")
+                        .size(metrics::FS_LABEL)
+                        .color(colors::TEXT),
+                )
                 .on_hover_text("Import configuration from raw JSON text or clipboard")
                 .clicked()
             {
@@ -445,7 +498,11 @@ impl WakeApp {
     }
 
     pub fn trigger_reachability_test(&mut self) {
-        let host = self.settings_edit_profile.thinkstation_ip.trim().to_string();
+        let host = self
+            .settings_edit_profile
+            .thinkstation_ip
+            .trim()
+            .to_string();
         if host.is_empty() {
             self.add_toast(Toast::warning("Please enter a Target IP / Host to test"));
             return;
@@ -594,7 +651,9 @@ impl WakeApp {
             &mut self.settings_edit_profile.direct_wol,
             " Direct local UDP Wake-on-LAN (bypass Pi gateway)",
         )
-        .on_hover_text("Send WOL packet directly via local socket instead of SSH command via Pi gateway");
+        .on_hover_text(
+            "Send WOL packet directly via local socket instead of SSH command via Pi gateway",
+        );
         ui.add_space(metrics::SPACE_SM);
 
         let pi_h_err = if !self.settings_edit_profile.pi_host.trim().is_empty() {
@@ -765,7 +824,9 @@ impl WakeApp {
             &mut self.settings_edit_profile.auto_close,
             " Auto-close window when workstation is Ready",
         )
-        .on_hover_text("Automatically close application once Sunshine streaming host is fully operational");
+        .on_hover_text(
+            "Automatically close application once Sunshine streaming host is fully operational",
+        );
     }
 }
 

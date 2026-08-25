@@ -18,10 +18,21 @@ pub const MAX_ALLOWED_INTERVAL_SECONDS: u64 = 3600; // 1 hour
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
     EmptyField(&'static str),
-    InvalidPort { field: &'static str, value: u16 },
-    OutOfRange { field: &'static str, min: u64, max: u64, value: u64 },
+    InvalidPort {
+        field: &'static str,
+        value: u16,
+    },
+    OutOfRange {
+        field: &'static str,
+        min: u64,
+        max: u64,
+        value: u64,
+    },
     InvalidMac(String),
-    InvalidHostToken { field: &'static str, reason: String },
+    InvalidHostToken {
+        field: &'static str,
+        reason: String,
+    },
     MissingPiUser,
     IoError(String),
     ParseError(String),
@@ -33,17 +44,35 @@ impl std::fmt::Display for ConfigError {
         match self {
             Self::EmptyField(field) => write!(f, "{} cannot be empty", field),
             Self::InvalidPort { field, value } => {
-                write!(f, "{} port {} is invalid (must be between 1 and 65535)", field, value)
+                write!(
+                    f,
+                    "{} port {} is invalid (must be between 1 and 65535)",
+                    field, value
+                )
             }
-            Self::OutOfRange { field, min, max, value } => {
-                write!(f, "{} value {} is out of allowed range ({} to {})", field, value, min, max)
+            Self::OutOfRange {
+                field,
+                min,
+                max,
+                value,
+            } => {
+                write!(
+                    f,
+                    "{} value {} is out of allowed range ({} to {})",
+                    field, value, min, max
+                )
             }
             Self::InvalidMac(reason) => write!(f, "Invalid MAC address: {}", reason),
             Self::InvalidHostToken { field, reason } => write!(f, "Invalid {}: {}", field, reason),
-            Self::MissingPiUser => write!(f, "Pi gateway user cannot be empty when Pi gateway host is specified"),
+            Self::MissingPiUser => write!(
+                f,
+                "Pi gateway user cannot be empty when Pi gateway host is specified"
+            ),
             Self::IoError(msg) => write!(f, "I/O error: {}", msg),
             Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            Self::PartialImportWarnings(warnings) => write!(f, "Import warnings: {}", warnings.join("; ")),
+            Self::PartialImportWarnings(warnings) => {
+                write!(f, "Import warnings: {}", warnings.join("; "))
+            }
         }
     }
 }
@@ -265,12 +294,18 @@ pub fn normalize_mac_address(mac: &str) -> Result<String, String> {
         || trimmed.starts_with('.')
         || trimmed.ends_with('.')
     {
-        return Err(format!("Invalid leading or trailing delimiter in MAC address '{}'.", trimmed));
+        return Err(format!(
+            "Invalid leading or trailing delimiter in MAC address '{}'.",
+            trimmed
+        ));
     }
 
     for c in trimmed.chars() {
         if !c.is_ascii_hexdigit() && c != ':' && c != '-' && c != '.' && !c.is_whitespace() {
-            return Err(format!("Invalid character '{}' in MAC address '{}'.", c, trimmed));
+            return Err(format!(
+                "Invalid character '{}' in MAC address '{}'.",
+                c, trimmed
+            ));
         }
     }
 
@@ -284,12 +319,12 @@ pub fn normalize_mac_address(mac: &str) -> Result<String, String> {
 
     let normalized = format!(
         "{}:{}:{}:{}:{}:{}",
-        &clean[0..2].to_ascii_uppercase(),
-        &clean[2..4].to_ascii_uppercase(),
-        &clean[4..6].to_ascii_uppercase(),
-        &clean[6..8].to_ascii_uppercase(),
-        &clean[8..10].to_ascii_uppercase(),
-        &clean[10..12].to_ascii_uppercase(),
+        clean[0..2].to_ascii_uppercase(),
+        clean[2..4].to_ascii_uppercase(),
+        clean[4..6].to_ascii_uppercase(),
+        clean[6..8].to_ascii_uppercase(),
+        clean[8..10].to_ascii_uppercase(),
+        clean[10..12].to_ascii_uppercase(),
     );
     Ok(normalized)
 }
@@ -312,7 +347,9 @@ pub fn validate_settings(settings: &HostProfile) -> Result<(), String> {
     if !pi_host.is_empty() {
         crate::net::validate_host_token(pi_host, "Pi gateway host")?;
         if pi_user.is_empty() {
-            return Err("Pi gateway user cannot be empty when Pi gateway host is specified".to_string());
+            return Err(
+                "Pi gateway user cannot be empty when Pi gateway host is specified".to_string(),
+            );
         }
         crate::net::validate_host_token(pi_user, "Pi gateway user")?;
     }
@@ -387,7 +424,9 @@ pub fn export_config_json(config: &AppConfig) -> Result<String, String> {
     serde_json::to_string_pretty(config).map_err(|e| e.to_string())
 }
 
-pub fn import_config_json_with_warnings(json_str: &str) -> Result<(AppConfig, Vec<String>), String> {
+pub fn import_config_json_with_warnings(
+    json_str: &str,
+) -> Result<(AppConfig, Vec<String>), String> {
     let trimmed = json_str.trim();
     if trimmed.is_empty() {
         return Err("Configuration JSON string is empty".to_string());
@@ -453,7 +492,11 @@ pub fn import_config_json_with_warnings(json_str: &str) -> Result<(AppConfig, Ve
                     let active_profile = if profiles.contains_key(&active) {
                         active
                     } else {
-                        let first = profiles.keys().next().cloned().unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string());
+                        let first = profiles
+                            .keys()
+                            .next()
+                            .cloned()
+                            .unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string());
                         warnings.push(format!("Active profile fallback to '{}'", first));
                         first
                     };
@@ -491,7 +534,11 @@ pub fn load_config_from_path(
     let data = match fs::read_to_string(config_file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Warning: Could not read config file {}: {}. Using defaults.", config_file.display(), e);
+            eprintln!(
+                "Warning: Could not read config file {}: {}. Using defaults.",
+                config_file.display(),
+                e
+            );
             let default_app = AppConfig::default();
             let active = default_app.get_active_profile();
             return (default_app, active);

@@ -1,203 +1,390 @@
 # Wake Workstation
 
-A cross-platform (Windows / Linux / macOS) Rust desktop + CLI utility that automates the entire "wake up my gaming PC and start streaming" sequence for [Moonlight](https://moonlight-stream.org/) / [Sunshine](https://github.com/LizardByte/Sunshine) game streaming setups.
+<div align="center">
 
-Instead of manually sending a Wake-on-LAN packet, waiting for the box to boot, and then opening Moonlight yourself, Wake Workstation sends the magic packet (directly over UDP broadcast, or via SSH to a Raspberry Pi gateway on the target's LAN), polls the host with ICMP ping, waits for its SSH daemon and Sunshine streaming port to come online, and then automatically launches your installed Moonlight client. It also exposes remote power actions (suspend / reboot / shutdown) over SSH, ships a GUI ([eframe](https://github.com/emilk/egui)/egui) and a scriptable `--cli` mode, and supports multiple named host profiles so you can point it at more than one machine.
+[![CI](https://github.com/coryp/wake-workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/coryp/wake-workstation/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust: 2021](https://img.shields.io/badge/Rust-2021_Edition-orange?logo=rust)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/coryp/wake-workstation)
+[![GUI: egui](https://img.shields.io/badge/GUI-egui%20%2F%20eframe-brightgreen)](https://github.com/emilk/egui)
+[![Streaming: Moonlight + Sunshine](https://img.shields.io/badge/Streaming-Moonlight%20%2B%20Sunshine-9cf)](https://moonlight-stream.org)
+
+**A high-performance, cross-platform (Windows / Linux / macOS) Rust desktop GUI + CLI orchestrator that automates the entire "Wake gaming PC / workstation, verify services, and stream" pipeline for [Moonlight](https://moonlight-stream.org/) and [Sunshine](https://github.com/LizardByte/Sunshine).**
+
+[Quickstart](#quickstart) • [Features](#key-features) • [CLI Reference](#cli-flag-reference) • [Configuration](#configuration) • [Moonlight & Sunshine Setup](#moonlight--sunshine-complete-setup-guide) • [Architecture](#architecture--pipeline-stages) • [Troubleshooting](#troubleshooting)
+
+</div>
+
+---
+
+## Overview
+
+Streaming high-end games and GPU workloads to thin clients, laptops, or handhelds (Steam Deck, ROG Ally) using Moonlight and Sunshine is incredible—until you need to power on the remote rig.
+
+Normally, waking up and connecting requires multiple manual steps:
+1. Sending a Wake-on-LAN magic packet from your phone or router.
+2. Waiting blindly for the machine to POST and boot into the OS.
+3. Checking if Sunshine started up and the network stack is ready.
+4. Manually opening the Moonlight client.
+5. Manually connecting to the host.
+
+**Wake Workstation** transforms this into a single click (or single CLI command). It fires the WOL packet (locally or relayed over SSH via a Raspberry Pi gateway), continuously polls the host's ICMP ping, verifies the SSH daemon and Sunshine streaming port, streams live RTT latency sparklines, and immediately launches Moonlight the moment the host is ready to stream. When finished, you can suspend, reboot, or shut down the host with one click over SSH.
 
 > [!NOTE]
-> Wake Workstation **orchestrates** an existing streaming setup — it does not install or configure Moonlight or Sunshine for you. Set those up on the client and target machine first.
+> Wake Workstation **orchestrates** your existing streaming setup—it does not install or replace Moonlight or Sunshine. Set up Sunshine on the host and Moonlight on the client first (see our [Setup Guide](#moonlight--sunshine-complete-setup-guide) below).
 
-## Prerequisites
+---
 
-| Requirement | Needed for |
-|---|---|
-| [Rust toolchain](https://rustup.rs/) (stable, edition 2021) | Building the project |
-| `wakeonlan` installed on the Raspberry Pi (or other) gateway host | Pi-gateway WOL mode only ([`send_ssh_wol`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/net.rs#L85-L121) shells out to `wakeonlan -i <broadcast> <mac>` over SSH) |
-| SSH server + key-based auth on the gateway and/or target host | Pi-gateway WOL mode, SSH port-check stage, and `--power` actions |
-| [Moonlight](https://moonlight-stream.org/) client installed on the machine running this tool | Auto-launch on ready, and the "Launch Moonlight" GUI button |
-| [Sunshine](https://github.com/LizardByte/Sunshine) already installed and running on the target machine | The Sunshine-port readiness check (default TCP `47989`) |
+## Key Features
 
-On Linux, building an `eframe`/`egui`/`winit`-based GUI typically requires the standard X11 or Wayland development headers to already be installed (e.g. `libx11-dev`, `libxkbcommon-dev`, `libgtk-3-dev` or your distro's equivalents). CLI-only usage has no such requirement.
+- 🚀 **Full End-to-End Wake Automation**: Wake-on-LAN -> ICMP Ping reachability check -> SSH daemon check -> Sunshine streaming port check -> Instant Moonlight launch.
+- 🌐 **Dual Wake Modes**: Direct local UDP broadcast or secure SSH relay via a 24/7 low-power gateway (e.g. Raspberry Pi) when connecting across subnets or VPNs (Tailscale, WireGuard).
+- 🖥️ **Modern Desktop GUI**: Built with [eframe](https://github.com/emilk/egui) / [egui](https://github.com/emilk/egui). Features real-time RTT latency sparklines, 4-stage visual stepper, live diagnostics console with log filters, reachability testing, and modal settings editor.
+- ⚡ **Scriptable Headless CLI**: Run `--cli` for terminal workflows, headless scripts, systemd startup hooks, or SSH sessions without an X11/Wayland display.
+- 💤 **Remote Power Actions**: Execute non-interactive `suspend`, `reboot`, or `shutdown` over SSH (`--power <action>` or via GUI menu).
+- 🗂️ **Multi-Host Profiles**: Seamlessly switch between multiple target rigs (e.g. `workstation`, `gaming-pc`, `home-server`) with JSON profile management and direct GUI import/export.
+- 🔍 **Smart Network Diagnostics**: Multi-locale ICMP latency parsing (English, German, French, Spanish, Russian, Chinese, Japanese, etc.), ARP cache MAC validation, and rate-limited WOL packet resends.
+- 🛡️ **Hardened & Safe**: Strict input token validation prevents shell injection on SSH commands; console window suppression (`CREATE_NO_WINDOW`) on Windows prevents distracting popups.
 
-## Build
+---
+
+## GUI Preview & Layout
+
+```text
++-----------------------------------------------------------------------------------+
+|  [ WAKE WORKSTATION ]   Profile: [ workstation v ] [Test Ping] [Settings] [Power] |
++-----------------------------------------------------------------------------------+
+|                                                                                   |
+|     +-----------------------------------------------------------------------+     |
+|     |  [ WAKE HOST ]  Stage: Standby | Target: 192.168.1.50 (AA:BB:CC:DD)  |     |
+|     |  Latency: 1.2ms [~/\_/\~~]                                            |     |
+|     +-----------------------------------------------------------------------+     |
+|                                                                                   |
+|     [ 1. WOL PACKET ]    [ 2. ICMP PING ]    [ 3. SSH DAEMON ]   [ 4. SUNSHINE ]  |
+|       (Direct UDP / Pi)    (Host Reachable)    (Port 22 Open)      (Port 47989)   |
+|            [ v ]                [ v ]               [ v ]              [ v ]      |
+|                                                                                   |
+|     +-- Live Event Diagnostics Console -------------------------------------+     |
+|     | [12:00:01] [INFO] Dispatched WOL magic packet to 192.168.1.255:9      |     |
+|     | [12:00:08] [OK]   Host responded to ICMP ping (RTT: 1.4ms)            |     |
+|     | [12:00:11] [OK]   SSH port 22 is reachable                           |     |
+|     | [12:00:13] [OK]   Sunshine streaming port 47989 is online!            |     |
+|     | [12:00:13] [INFO] Launching Moonlight game streaming client...       |     |
+|     +-----------------------------------------------------------------------+     |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+## Quickstart
+
+### 1. Build or Install
+
+Ensure you have the [Rust toolchain](https://rustup.rs/) installed:
 
 ```sh
+# Clone the repository
+git clone https://github.com/coryp/wake-workstation.git
+cd wake-workstation
+
+# Build optimized release binary
 cargo build --release
 ```
 
-The compiled binary is written to `target/release/wake-workstation` (`.exe` on Windows). Run `cargo test` to run the test suite ([src/tests.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/tests.rs)).
+The compiled executable will be located in `target/release/wake-workstation` (or `.exe` on Windows).
 
-## Running
+### 2. Configure Your Host Profile
 
-**GUI mode** (default when a display is available):
+On first launch, Wake Workstation automatically generates a configuration file with template values. You can configure your target machine either through the GUI **Settings** modal or by editing the JSON config directly.
 
-```sh
-./target/release/wake-workstation
-```
+Default config file location:
+- **Windows**: `%APPDATA%\wake-workstation\config.json`
+- **Linux / macOS**: `~/.config/wake-workstation/config.json`
 
-**CLI mode** — explicit, or auto-selected on Linux when no `DISPLAY`/`WAYLAND_DISPLAY` is set (e.g. over SSH):
-
-```sh
-./target/release/wake-workstation --cli
-```
-
-**Immediate remote power action** (no wake pipeline, exits after the command completes):
-
-```sh
-./target/release/wake-workstation --power suspend
-```
-
-On first run, a config file is auto-generated at the default location (see [Configuration](#configuration)) if none exists yet, populated with a `workstation` profile containing generic placeholder values — you must edit it (or override via flags) with your real target IP, MAC address, and SSH username before waking will work.
-
-## CLI flag reference
-
-All flags are optional; any value not supplied falls back to the active profile's config value. Source: [src/main.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/main.rs#L17-L95).
-
-| Flag | Alias | Type | Description |
-|---|---|---|---|
-| `--cli` | | flag | Run in terminal CLI mode without launching the GUI |
-| `-p`, `--profile <NAME>` | | string | Activate a named profile from the config file (e.g. `thinkstation`, `server`) |
-| `--power <ACTION>` | | string | Execute an immediate remote power action (`suspend`, `reboot`, `shutdown`/`poweroff`) over SSH and exit — skips the wake pipeline entirely |
-| `--target <HOST>` | `--ip` | string | Override target IP / hostname |
-| `--user <USER>` | | string | Override target SSH username |
-| `--mac <MAC>` | | string | Override target MAC address |
-| `--broadcast <IP>` | | string | Override the WOL broadcast IP address |
-| `--pi-host <HOST>` | | string | Override the Pi gateway host |
-| `--pi-user <USER>` | | string | Override the Pi gateway SSH user |
-| `--direct-wol` | | flag | Force direct local UDP Wake-on-LAN, bypassing the Pi gateway |
-| `--direct-wol-port <PORT>` | | u16 | Override the direct WOL UDP port (default `9`) |
-| `--ssh-port <PORT>` | | u16 | Override the SSH port to poll/connect to (default `22`) |
-| `--sunshine-port <PORT>` | | u16 | Override the Sunshine streaming port to poll (default `47989`) |
-| `--max-wait <SECS>` | `--max-wait-seconds` | u64 | Override the overall pipeline timeout in seconds |
-| `--wol-resend <SECS>` | `--wol-resend-interval` | u64 | Override the interval between magic-packet re-sends while waiting |
-| `--no-moonlight` | | flag | Do not auto-launch Moonlight once the target becomes ready |
-| `--auto-close` | | flag | Auto-close the GUI window once the target is ready |
-| `-c`, `--config <PATH>` | | path | Use a custom JSON config file path instead of the OS default |
-| `-h`, `--help` / `-V`, `--version` | | | Standard clap-generated help/version output |
-
-## Configuration
-
-Config file is JSON and lives at:
-
-- Windows: `%APPDATA%\wake-workstation\config.json`
-- Linux / macOS: `~/.config/wake-workstation/config.json`
-
-(or wherever `--config <PATH>` points). It is created automatically on first run with placeholder values if it doesn't exist yet — see [`load_config_from_path`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/config.rs#L224-L310).
-
-The top level (`AppConfig`) holds an `active_profile` name and a map of named `HostProfile` entries, so you can keep configs for multiple machines side by side and switch between them with `-p <name>` or the GUI's profile picker:
+Example configuration:
 
 ```json
 {
   "active_profile": "workstation",
   "profiles": {
     "workstation": {
-      "pi_host": "192.168.1.10",
-      "pi_user": "pi",
       "thinkstation_ip": "192.168.1.50",
-      "thinkstation_user": "user",
+      "thinkstation_user": "cory",
       "mac_address": "AA:BB:CC:DD:EE:FF",
       "broadcast_addr": "192.168.1.255",
+      "direct_wol": true,
+      "direct_wol_port": 9,
       "ssh_port": 22,
       "sunshine_port": 47989,
-      "sunshine_service": "sunshine.service",
       "max_wait_seconds": 300,
       "wol_resend_interval": 60,
-      "sunshine_grace_seconds": 30,
-      "direct_wol": false,
-      "direct_wol_port": 9,
       "auto_close": false
     }
   }
 }
 ```
 
-> [!IMPORTANT]
-> The values above are placeholders. Replace `thinkstation_ip`, `mac_address`, `thinkstation_user`, `pi_host`/`pi_user` (or `broadcast_addr` if using direct WOL) with the real values for your network before use. `mac_address` must resolve to exactly 12 hex digits (`:`, `-`, and `.` delimiters are accepted).
+### 3. Launch & Stream
 
-### `HostProfile` fields
+- **Launch Desktop GUI**:
+  ```sh
+  ./target/release/wake-workstation
+  ```
+  Click **Wake Host** or press <kbd>Space</kbd> / <kbd>Enter</kbd>.
 
-| Field | Type | Purpose |
-|---|---|---|
-| `thinkstation_ip` | string | Target host IP/hostname — pinged, SSH/Sunshine-port polled, and used for `--power` |
-| `thinkstation_user` | string | SSH username on the target, used for the SSH port check context and `--power` actions |
-| `mac_address` | string | Target NIC MAC address, encoded into the WOL magic packet |
-| `broadcast_addr` | string | Broadcast IP the magic packet is sent to (both direct and via `wakeonlan -i`) |
-| `pi_host` / `pi_user` | string | Raspberry Pi (or other) SSH gateway host/user for relayed WOL |
-| `direct_wol` | bool | Force direct local UDP WOL, skipping the Pi gateway even if `pi_host` is set |
-| `direct_wol_port` | u16 | UDP port for the direct WOL magic packet (default `9`) |
-| `ssh_port` | u16 | Port polled for the SSH stage, and used for `--power`/SSH connections |
-| `sunshine_port` | u16 | Port polled for the Sunshine stage (default `47989`) |
-| `sunshine_service` | string | Sunshine systemd service name (part of the profile schema; informational field) |
-| `sunshine_grace_seconds` | u64 | Grace period value stored in the profile schema |
-| `max_wait_seconds` | u64 | Overall pipeline timeout before the stage machine gives up (`Stage::Timeout`) |
-| `wol_resend_interval` | u64 | How often (seconds) the magic packet is re-sent while stuck in the WOL/Ping stages |
-| `auto_close` | bool | GUI auto-closes its window once the target reaches `Ready` |
+- **Launch in Headless CLI Mode**:
+  ```sh
+  ./target/release/wake-workstation --cli
+  ```
 
-Every field can be overridden per-invocation with the matching CLI flag (see the table above) without editing the file.
+- **Perform Remote Power Action**:
+  ```sh
+  ./target/release/wake-workstation --power suspend
+  ```
 
-## Direct WOL vs. Pi-gateway WOL
+---
 
-Wake ThinkStation can send the Wake-on-LAN magic packet two ways, chosen in [`PipelineState::send_wol`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/pipeline.rs#L182-L255):
+## CLI Flag Reference
 
-- **Direct local UDP broadcast** ([`send_magic_packet`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/net.rs#L62-L82)) — used when `direct_wol: true` or `pi_host` is empty. The machine running Wake ThinkStation broadcasts the magic packet itself on `broadcast_addr:direct_wol_port`. This only works if the controlling machine is on the **same broadcast domain / LAN segment** as the target, since WOL magic packets don't normally route across subnets or over the internet.
-- **Pi-gateway relay over SSH** ([`send_ssh_wol`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/net.rs#L85-L121)) — used when a `pi_host` is configured and `direct_wol` is `false`. Wake ThinkStation SSHes into `pi_user@pi_host` (e.g. a Raspberry Pi that stays on and lives on the same LAN as the target) and runs `wakeonlan -i <broadcast_addr> <mac_address>` there. Use this when the machine running Wake ThinkStation is *not* on the target's local network (e.g. connecting remotely over a VPN/Tailscale) but a small always-on device on that LAN can relay the broadcast for you.
+All CLI arguments are optional; any omitted flag falls back to the active profile's configuration.
 
-If the SSH gateway dispatch fails, the pipeline logs a warning and automatically falls back to a direct local UDP packet.
+| Flag | Alias | Type | Description |
+|---|---|---|---|
+| `--cli` | | `flag` | Run in terminal CLI mode without launching the GUI |
+| `-p`, `--profile <NAME>` | | `string` | Activate a named profile from config (e.g. `workstation`, `gaming-rig`) |
+| `--power <ACTION>` | | `string` | Execute immediate remote power action (`suspend`, `reboot`, `shutdown`) over SSH and exit |
+| `--target <HOST>` | `--ip` | `string` | Override target IP address or hostname |
+| `--user <USER>` | | `string` | Override target SSH username |
+| `--mac <MAC>` | | `string` | Override target network interface MAC address |
+| `--broadcast <IP>` | | `string` | Override Wake-on-LAN broadcast IP address |
+| `--pi-host <HOST>` | | `string` | Override Raspberry Pi gateway host |
+| `--pi-user <USER>` | | `string` | Override Raspberry Pi gateway SSH user |
+| `--pi-ssh-port <PORT>` | | `u16` | Override Raspberry Pi gateway SSH port (default `22`) |
+| `--direct-wol` | | `flag` | Force direct local UDP Wake-on-LAN, bypassing Pi gateway |
+| `--direct-wol-port <PORT>` | | `u16` | Override direct WOL UDP port (default `9`) |
+| `--ssh-port <PORT>` | | `u16` | Override SSH port to poll / connect to (default `22`) |
+| `--sunshine-port <PORT>` | | `u16` | Override Sunshine streaming port to poll (default `47989`) |
+| `--max-wait <SECS>` | `--max-wait-seconds` | `u64` | Override overall pipeline timeout in seconds (default `300`) |
+| `--wol-resend <SECS>` | `--wol-resend-interval` | `u64` | Override interval between magic-packet re-sends while waiting |
+| `--no-moonlight` | | `flag` | Do not auto-launch Moonlight once host is ready |
+| `--auto-close` | | `flag` | Auto-close GUI window once target reaches `Ready` |
+| `-c`, `--config <PATH>` | | `path` | Use custom JSON configuration file path |
+| `-h`, `--help` / `-V`, `--version` | | | Standard help and version output |
 
-## Remote power actions
+---
 
-`--power <suspend|reboot|shutdown>` (CLI) or the GUI's power menu run [`execute_power_action`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/net.rs#L241-L304), which SSHes into `thinkstation_user@thinkstation_ip:ssh_port` and runs, depending on the action:
+## Configuration & Schema Reference
 
-```sh
-sudo -n systemctl suspend || systemctl suspend                                   # suspend
-sudo -n systemctl reboot  || systemctl reboot  || sudo -n reboot  || reboot        # reboot
-sudo -n systemctl poweroff || systemctl poweroff || sudo -n poweroff || poweroff  # shutdown/poweroff
-```
+### `HostProfile` Schema
 
-> [!IMPORTANT]
-> The SSH connection is made with `-o BatchMode=yes`, which means it **will never prompt for a password** — it fails immediately if key-based authentication isn't already set up. Before using `--power`, make sure:
-> 1. Your SSH key is authorized on the target (`~/.ssh/authorized_keys`) so `ssh user@target` succeeds non-interactively.
-> 2. The target user can run `sudo systemctl suspend|reboot|poweroff` **without a password prompt** (passwordless `sudo -n`), typically via a `/etc/sudoers.d/` entry — otherwise the `sudo -n ...` command fails and falls back to the non-sudo variant, which will only work if the user already has the relevant permission directly.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `thinkstation_ip` | `string` | `"192.168.1.50"` | Target host IP or hostname polled during Ping/SSH/Sunshine checks. |
+| `thinkstation_user`| `string` | `"user"` | SSH username on target host for power actions and context. |
+| `mac_address` | `string` | `"AA:BB:CC:DD:EE:FF"` | Target NIC MAC address (supports `:`, `-`, or `.` separators). |
+| `broadcast_addr` | `string` | `"192.168.1.255"` | Subnet broadcast address for WOL magic packets. |
+| `direct_wol` | `bool` | `false` | When `true`, sends local UDP broadcast directly; skips Pi gateway. |
+| `direct_wol_port` | `u16` | `9` | UDP destination port for direct WOL (standard is `9` or `7`). |
+| `pi_host` | `string` | `"192.168.1.10"` | Gateway IP/hostname used to relay WOL when `direct_wol: false`. |
+| `pi_user` | `string` | `"pi"` | SSH username for Raspberry Pi gateway. |
+| `pi_ssh_port` | `u16` | `22` | SSH port for Raspberry Pi gateway. |
+| `ssh_port` | `u16` | `22` | TCP port polled during the SSH stage and used for `--power`. |
+| `sunshine_port` | `u16` | `47989` | TCP port polled to verify Sunshine streaming daemon is up. |
+| `sunshine_service`| `string` | `"app-dev.lizardbyte.app.Sunshine.service"` | Informational systemd/Windows service name. |
+| `sunshine_grace_seconds`| `u64` | `30` | Optional grace period configured for startup. |
+| `max_wait_seconds` | `u64` | `300` | Pipeline timeout before marking stage as failed. |
+| `wol_resend_interval` | `u64`| `60` | Interval (seconds) to resend WOL packet if host hasn't responded. |
+| `auto_close` | `bool` | `false` | When `true`, GUI closes automatically after Moonlight launches. |
 
-## Architecture / pipeline stages
+---
 
-The wake sequence is a stage machine ([src/pipeline.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/pipeline.rs#L8-L45)) driven by non-blocking background checks, shared by both the GUI ([src/ui.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/ui.rs)) and the CLI runner ([`run_cli_pipeline`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/pipeline.rs#L534-L591)):
+## Moonlight & Sunshine Complete Setup Guide
+
+Follow this step-by-step guide to configure your remote workstation/gaming host and client machine.
+
+### 1. Target Host Setup (Sunshine & System Configuration)
+
+#### A. Enable Wake-on-LAN (WOL) in Motherboard BIOS/UEFI & OS
+1. **BIOS/UEFI**: Reboot into BIOS -> Advanced / Power Management -> Enable **"Wake on LAN"**, **"Power On By PCI-E"**, or **"Resume By Onboard LAN"**. Disable **"Deep Sleep"** or **"ErP Ready"** (which cuts NIC power when suspended).
+2. **Windows NIC Settings**:
+   - Open **Device Manager** -> **Network Adapters** -> Right-click your Ethernet adapter -> **Properties**.
+   - Under **Power Management**: Check *"Allow this device to wake the computer"* and *"Only allow a magic packet to wake the computer"*.
+   - Under **Advanced**: Enable *"Wake on Magic Packet"*.
+   - In Windows Control Panel -> **Power Options** -> *Choose what the power buttons do* -> Disable *"Turn on fast startup"* (Fast Startup can prevent WOL from S5 shutdown).
+3. **Linux NIC Settings**:
+   - Check WOL status with `sudo ethtool <interface>`. Look for `Wake-on: g`.
+   - If not enabled, run: `sudo ethtool -s <interface> wol g`.
+
+#### B. Install & Configure Sunshine
+1. **Install Sunshine**:
+   - **Windows**: Install via WinGet:
+     ```powershell
+     winget install LizardByte.Sunshine
+     ```
+     Or download the installer from [Sunshine GitHub Releases](https://github.com/LizardByte/Sunshine/releases).
+   - **Linux (Ubuntu / Debian)**:
+     ```sh
+     sudo apt install ./sunshine-debian-*.deb
+     ```
+   - **Linux (Flatpak)**:
+     ```sh
+     flatpak install flathub dev.lizardbyte.app.Sunshine
+     ```
+2. **Enable Autostart / Background Service**:
+   - On Windows, Sunshine installs as a background Windows Service. Ensure the service startup type is set to **Automatic**.
+   - On Linux (systemd user service):
+     ```sh
+     systemctl --user enable --now sunshine
+     ```
+3. **Firewall Configuration**:
+   Ensure the following ports are open on the target host:
+   - **TCP**: `47984`, `47989` (Web UI & HTTP), `47990`, `48010`
+   - **UDP**: `47998`, `47999`, `48000`, `48002`, `48010`
+   - *Windows Defender Quick Command (PowerShell as Admin)*:
+     ```powershell
+     New-NetFirewallRule -DisplayName "Sunshine Streaming" -Direction Inbound -LocalPort 47984,47989,47990,48010 -Protocol TCP -Action Allow
+     New-NetFirewallRule -DisplayName "Sunshine UDP" -Direction Inbound -LocalPort 47998-48002,48010 -Protocol UDP -Action Allow
+     ```
+   - *Linux UFW*:
+     ```sh
+     sudo ufw allow 47984,47989,47990,48010/tcp
+     sudo ufw allow 47998:48002,48010/udp
+     ```
+
+#### C. Configure Passwordless SSH (for `--power` Actions & Gateway Relays)
+1. Ensure OpenSSH server is running on the target machine:
+   - **Windows**: Install OpenSSH Server via *Optional Features* or run:
+     ```powershell
+     Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+     Start-Service sshd; Set-Service -Name sshd -StartupType 'Automatic'
+     ```
+   - **Linux**: `sudo apt install openssh-server && sudo systemctl enable --now ssh`.
+2. Authorize your client SSH public key (`~/.ssh/id_ed25519.pub`) in `~/.ssh/authorized_keys` on the target.
+3. For Linux target power actions (`suspend`, `reboot`, `shutdown`), allow passwordless sudo for systemctl commands:
+   ```sh
+   echo "$USER ALL=(ALL) NOPASSWD: /bin/systemctl suspend, /bin/systemctl reboot, /bin/systemctl poweroff" | sudo tee /etc/sudoers.d/workstation-power
+   sudo chmod 0440 /etc/sudoers.d/workstation-power
+   ```
+
+---
+
+### 2. Client Machine Setup (Moonlight)
+
+1. **Install Moonlight**:
+   - **Windows**: `winget install MoonlightGameStreaming.Moonlight`
+   - **Linux (Flatpak)**: `flatpak install flathub com.moonlight_stream.Moonlight`
+   - **macOS**: `brew install --cask moonlight`
+2. **Initial Pairing**:
+   - Launch Moonlight once on your client.
+   - Click **Add Host Manually** and enter your target's IP (`192.168.1.50`).
+   - Moonlight displays a 4-digit PIN.
+   - On the target machine (or via browser), open Sunshine Web UI: `https://<target-ip>:47990` -> **PIN** tab -> Enter the PIN and click **Send**.
+3. **Recommended Moonlight Quality & Latency Settings**:
+   - **Resolution & Frame Rate**: Match your client display (e.g. 2560x1440 @ 120 FPS or 4K @ 60 FPS).
+   - **Video Bitrate**: 50–100 Mbps for local Ethernet/Wi-Fi 6; 20–40 Mbps for remote connections.
+   - **Video Codec**: Force **AV1** or **HEVC (H.265)** for superior visual fidelity at lower bitrates.
+   - **Audio Configuration**: Stereo or 5.1 Surround.
+
+---
+
+### 3. Raspberry Pi Gateway Setup (Optional Remote Relay)
+
+If you connect to your home network remotely over a VPN (e.g. Tailscale, WireGuard), standard UDP Wake-on-LAN packets cannot cross the subnet router. Wake Workstation solves this by SSHing into a low-power device (like a Raspberry Pi) and running the broadcast locally.
+
+1. Install `wakeonlan` on your Raspberry Pi:
+   ```sh
+   sudo apt update && sudo apt install -y wakeonlan
+   ```
+2. Test waking manually from the Pi:
+   ```sh
+   wakeonlan -i 192.168.1.255 AA:BB:CC:DD:EE:FF
+   ```
+3. Copy your client SSH public key to the Pi:
+   ```sh
+   ssh-copy-id pi@192.168.1.10
+   ```
+4. Set `"direct_wol": false`, `"pi_host": "192.168.1.10"`, and `"pi_user": "pi"` in your Wake Workstation profile.
+
+---
+
+## Architecture & Pipeline Stages
+
+### Pipeline State Machine
+
+Wake Workstation executes a non-blocking asynchronous state machine:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Standby
-    Standby --> Wol: start / re-send WOL
-    Wol --> Ping: magic packet dispatched
-    Ping --> Ssh: ICMP reply received
-    Ssh --> Sunshine: SSH port open
-    Sunshine --> Ready: Sunshine port open (auto-launch Moonlight)
-    Ready --> Standby: suspend / shutdown via --power
-    Wol --> Timeout: max_wait_seconds exceeded
-    Ping --> Timeout: max_wait_seconds exceeded
-    Ssh --> Timeout: max_wait_seconds exceeded
-    Sunshine --> Timeout: max_wait_seconds exceeded
+    [*] --> Standby: App Launch
+    Standby --> Wol: Start Wake Sequence
+    Wol --> Ping: Magic Packet Dispatched
+    Ping --> Ssh: Host Responding to ICMP Ping
+    Ssh --> Sunshine: SSH Port 22 Accessible
+    Sunshine --> Ready: Sunshine Port 47989 Online
+    Ready --> Standby: Remote Power Action / Reset
+    Wol --> Timeout: Pipeline Timeout (max_wait_seconds)
+    Ping --> Timeout: Pipeline Timeout (max_wait_seconds)
+    Ssh --> Timeout: Pipeline Timeout (max_wait_seconds)
+    Sunshine --> Timeout: Pipeline Timeout (max_wait_seconds)
+    Timeout --> Wol: Retry / Resend Magic Packet
 ```
 
-High-level component flow:
+### Component Flow Architecture
 
 ```mermaid
-flowchart LR
-    A[main.rs\nCLI args / config load] --> B{GUI or --cli?}
-    B -->|GUI| C[ui.rs\neframe/egui app]
-    B -->|CLI or headless| D[run_cli_pipeline]
-    C --> E[pipeline.rs\nPipelineState stage machine]
-    D --> E
-    E -->|WOL| F1[net.rs\nsend_magic_packet / send_ssh_wol]
-    E -->|Ping| F2[net.rs\ncheck_ping]
-    E -->|SSH/Sunshine| F3[net.rs\ncheck_tcp_port]
-    E -->|Ready| F4[net.rs\nlaunch_moonlight]
-    F1 -->|direct| G[Target NIC]
-    F1 -->|relayed| H[Raspberry Pi gateway\nwakeonlan]
-    H --> G
+flowchart TD
+    subgraph Client ["Client Machine (Wake Workstation)"]
+        A[main.rs / CLI Parser] --> B{GUI or --cli?}
+        B -->|Desktop GUI| C[WakeApp / egui]
+        B -->|CLI Mode| D[run_cli_pipeline]
+        C --> E[PipelineState]
+        D --> E
+        E --> F1[net::send_wol]
+        E --> F2[net::check_ping]
+        E --> F3[net::check_tcp_port]
+        E --> F4[net::launch_moonlight]
+        E --> F5[net::execute_power_action]
+    end
+
+    subgraph Network ["Network Dispatch"]
+        F1 -->|Direct UDP Broadcast| G1[LAN Subnet 255.255.255.255]
+        F1 -->|Relayed over SSH| G2[Raspberry Pi Gateway\nwakeonlan]
+        G2 --> G1
+        F2 -->|ICMP Echo| H[Target Workstation / Rig]
+        F3 -->|TCP 22 / 47989| H
+        F5 -->|SSH BatchMode| H
+        G1 -->|WOL Magic Packet| H
+    end
+
+    subgraph Streaming ["Moonlight Stream"]
+        F4 -->|Launch Client| M[Moonlight Client App]
+        M ===>|RTP/RTSP Stream 47984-48010| H
+    end
 ```
 
-Each polling stage (Ping/SSH/Sunshine) hands its blocking `ping`/TCP-connect work off to a background thread ([`spawn_check`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/pipeline.rs#L477-L531)) so `tick()` never blocks the GUI event loop or the CLI's polling loop.
+---
+
+## Troubleshooting
+
+| Symptom | Probable Cause | Resolution |
+|---|---|---|
+| **Target does not wake up** | Motherboard PCIe WOL disabled or Fast Startup enabled | Ensure WOL is enabled in BIOS/UEFI. Disable *Fast Startup* in Windows Power Options. Check that NIC drivers have *"Wake on Magic Packet"* enabled. |
+| **Ping check times out indefinitely** | Windows Firewall blocks ICMP Echo | On target Windows host, enable rule: `netsh advfirewall firewall add rule name="ICMP Allow incoming V4 echo" protocol=icmpv4:8,any dir=in action=allow` |
+| **SSH port check fails or `--power` fails** | OpenSSH not running or key auth missing | Ensure `sshd` service is running on target. Test manual non-interactive login: `ssh -o BatchMode=yes user@target_ip`. |
+| **Sunshine check fails on port 47989** | Sunshine service not running or port blocked | Verify Sunshine is running (`systemctl --user status sunshine` or Windows Services). Verify firewall permits TCP `47989`. |
+| **Moonlight client does not auto-launch** | Moonlight not installed in standard path | Ensure Moonlight is installed via WinGet, Scoop, Flatpak, or standard Program Files. You can also manually launch Moonlight once the UI shows `Ready`. |
+| **Gateway WOL fails over SSH** | `wakeonlan` missing on Pi or SSH key rejected | Install `wakeonlan` on Pi (`sudo apt install wakeonlan`). Verify passwordless SSH: `ssh pi@pi_host wakeonlan --version`. |
+
+---
+
+## Contributing
+
+Contributions, bug reports, and feature proposals are warmly welcomed! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on code style, running tests (`cargo test`), and our PR process.
+
+---
 
 ## License
 
-MIT — see LICENSE.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2026 **Cory Pleasance**

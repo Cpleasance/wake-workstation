@@ -271,7 +271,10 @@ impl PipelineState {
                 LogLevel::Action,
                 format!(
                     "Sending direct local UDP WOL magic packet to {} ({}:{}) [attempt #{}]",
-                    config.mac_address, config.broadcast_addr, config.direct_wol_port, self.wol_count
+                    config.mac_address,
+                    config.broadcast_addr,
+                    config.direct_wol_port,
+                    self.wol_count
                 ),
             );
             match send_magic_packet(
@@ -282,7 +285,10 @@ impl PipelineState {
                 Ok(()) => {
                     self.log(
                         LogLevel::Ok,
-                        format!("Direct WOL packet broadcast successfully (attempt #{})", self.wol_count),
+                        format!(
+                            "Direct WOL packet broadcast successfully (attempt #{})",
+                            self.wol_count
+                        ),
                     );
                 }
                 Err(e) => {
@@ -329,7 +335,8 @@ impl PipelineState {
             }
         }
 
-        if self.stage == Stage::Wol || self.stage == Stage::Standby || self.stage == Stage::Timeout {
+        if self.stage == Stage::Wol || self.stage == Stage::Standby || self.stage == Stage::Timeout
+        {
             self.stage = Stage::Ping;
             self.stalled_stage = None;
             self.is_finished = false;
@@ -371,7 +378,8 @@ impl PipelineState {
         }
 
         // Periodic WOL re-send if still waiting on Ping or SSH
-        if (self.stage == Stage::Wol || self.stage == Stage::Ping) && config.wol_resend_interval > 0 {
+        if (self.stage == Stage::Wol || self.stage == Stage::Ping) && config.wol_resend_interval > 0
+        {
             if let Some(last_wol) = self.last_wol_time {
                 if last_wol.elapsed().as_secs() >= config.wol_resend_interval {
                     self.log(
@@ -463,7 +471,8 @@ impl PipelineState {
                             ),
                         );
                         self.stage = Stage::Ready;
-                        self.status_message = "Host is fully ready and online for game streaming!".to_string();
+                        self.status_message =
+                            "Host is fully ready and online for game streaming!".to_string();
                         self.is_finished = true;
                         play_system_sound(SoundType::Success);
 
@@ -473,7 +482,10 @@ impl PipelineState {
                             if launch_moonlight() {
                                 self.log(LogLevel::Ok, "Moonlight client spawned successfully");
                             } else {
-                                self.log(LogLevel::Warn, "Could not automatically find Moonlight binary to launch");
+                                self.log(
+                                    LogLevel::Warn,
+                                    "Could not automatically find Moonlight binary to launch",
+                                );
                             }
                         }
                     } else {
@@ -569,7 +581,10 @@ impl PipelineState {
                 Ok(msg)
             }
             Err(err) => {
-                self.log(LogLevel::Err, format!("Power action '{}' failed: {}", action, err));
+                self.log(
+                    LogLevel::Err,
+                    format!("Power action '{}' failed: {}", action, err),
+                );
                 Err(err)
             }
         }
@@ -657,7 +672,10 @@ pub fn run_cli_pipeline(config: HostProfile, auto_launch_moonlight: bool) -> Res
          MAC:         {}\n\
          Max Timeout: {}s\n\
          ======================================================\n",
-        config.thinkstation_ip, config.thinkstation_user, config.mac_address, config.max_wait_seconds
+        config.thinkstation_ip,
+        config.thinkstation_user,
+        config.mac_address,
+        config.max_wait_seconds
     );
 
     let mut last_log_idx = 0;

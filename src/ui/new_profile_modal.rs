@@ -39,7 +39,8 @@ impl WakeApp {
                 let edit_response = ui.add(text_edit);
 
                 // Auto-request keyboard focus on initial appearance
-                if !edit_response.has_focus() && self.new_profile_name_input.starts_with("profile-") {
+                if !edit_response.has_focus() && self.new_profile_name_input.starts_with("profile-")
+                {
                     edit_response.request_focus();
                 }
 
@@ -68,11 +69,14 @@ impl WakeApp {
                         if create_btn.clicked() {
                             submit = true;
                         }
-                        create_btn.on_hover_text("Create and switch to new host profile (Shortcut: Enter)");
+                        create_btn.on_hover_text(
+                            "Create and switch to new host profile (Shortcut: Enter)",
+                        );
 
                         ui.add_space(metrics::SPACE_SM);
 
-                        let cancel_btn = flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
+                        let cancel_btn =
+                            flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
                         if cancel_btn.clicked() {
                             self.show_new_profile_dialog = false;
                         }

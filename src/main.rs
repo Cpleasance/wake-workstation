@@ -37,6 +37,25 @@ use pipeline::run_cli_pipeline;
 use std::path::PathBuf;
 use ui::WakeApp;
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerAction {
+    Suspend,
+    Reboot,
+    Shutdown,
+    Poweroff,
+}
+
+impl PowerAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Suspend => "suspend",
+            Self::Reboot => "reboot",
+            Self::Shutdown => "shutdown",
+            Self::Poweroff => "poweroff",
+        }
+    }
+}
+
 #[derive(Parser, Debug, Default, Clone)]
 #[command(
     name = "wake-workstation",
@@ -52,9 +71,9 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub profile: Option<String>,
 
-    /// Execute immediate remote power command (suspend, reboot, shutdown) and exit
-    #[arg(long)]
-    pub power: Option<String>,
+    /// Execute immediate remote power command (suspend, reboot, shutdown, poweroff) and exit
+    #[arg(long, value_enum)]
+    pub power: Option<PowerAction>,
 
     /// Override target IP / hostname
     #[arg(long, visible_alias = "ip")]
@@ -85,8 +104,12 @@ pub struct CliArgs {
     pub pi_ssh_port: Option<u16>,
 
     /// Force direct local UDP Wake-on-LAN
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_direct_wol")]
     pub direct_wol: bool,
+
+    /// Disable direct WOL and force Pi gateway relay
+    #[arg(long, conflicts_with = "direct_wol")]
+    pub no_direct_wol: bool,
 
     /// Override direct WOL port
     #[arg(long)]
@@ -113,8 +136,12 @@ pub struct CliArgs {
     pub no_moonlight: bool,
 
     /// Auto-close GUI window once target is ready
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_auto_close")]
     pub auto_close: bool,
+
+    /// Disable auto-close even if configured in active profile
+    #[arg(long, conflicts_with = "auto_close")]
+    pub no_auto_close: bool,
 
     /// Path to custom JSON configuration file
     #[arg(short, long)]
@@ -145,6 +172,8 @@ pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProf
     }
     if args.direct_wol {
         profile.direct_wol = true;
+    } else if args.no_direct_wol {
+        profile.direct_wol = false;
     }
     if let Some(dwp) = args.direct_wol_port {
         profile.direct_wol_port = dwp;
@@ -163,6 +192,8 @@ pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProf
     }
     if args.auto_close {
         profile.auto_close = true;
+    } else if args.no_auto_close {
+        profile.auto_close = false;
     }
     profile
 }
@@ -201,30 +232,32 @@ pub fn default_native_options() -> eframe::NativeOptions {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse();
 
-    let config_path = args
-        .config
-        .clone()
-        .unwrap_or_else(default_config_path);
+    let config_path = args.config.clone().unwrap_or_else(default_config_path);
 
-    let (mut app_cfg, mut active_profile) = load_config_from_path(
-        &config_path,
-        args.profile.as_deref(),
-    );
+    let (mut app_cfg, mut active_profile) =
+        load_config_from_path(&config_path, args.profile.as_deref());
 
     active_profile = apply_cli_overrides(active_profile, &args);
 
-    if let Err(err) = validate_settings(&active_profile) {
-        eprintln!("Configuration Error: {}", err);
-        std::process::exit(1);
-    }
+    // 1. Immediate remote power command execution (exits early without requiring full WOL pipeline config)
+    if let Some(action) = args.power {
+        let act_str = action.as_str();
+        if let Err(err) = crate::config::validate_target_ip(&active_profile.thinkstation_ip) {
+            eprintln!("Power Command Error: {}", err);
+            std::process::exit(1);
+        }
+        if let Err(err) = crate::config::validate_username(&active_profile.thinkstation_user) {
+            eprintln!("Power Command Error: {}", err);
+            std::process::exit(1);
+        }
+        if active_profile.ssh_port == 0 {
+            eprintln!("Power Command Error: SSH port must be between 1 and 65535");
+            std::process::exit(1);
+        }
 
-    app_cfg.set_profile(&app_cfg.active_profile.clone(), active_profile.clone());
-
-    // Immediate remote power command execution
-    if let Some(ref action) = args.power {
         println!(
             "Executing remote power action '{}' on {}@{} (port {})...",
-            action,
+            act_str,
             active_profile.thinkstation_user,
             active_profile.thinkstation_ip,
             active_profile.ssh_port
@@ -232,7 +265,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match execute_power_action(
             &active_profile.thinkstation_ip,
             &active_profile.thinkstation_user,
-            action,
+            act_str,
             active_profile.ssh_port,
         ) {
             Ok(msg) => {
@@ -245,6 +278,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    // 2. Validate full configuration settings for the wake pipeline
+    if let Err(err) = validate_settings(&active_profile) {
+        eprintln!("Configuration Error: {}", err);
+        std::process::exit(1);
+    }
+
+    // Note: CLI overrides modify the in-memory active profile and update AppConfig for this session,
+    // but are not automatically saved to disk unless explicitly saved via the GUI settings modal.
+    let active_name = app_cfg.active_profile.clone();
+    app_cfg.set_profile(&active_name, active_profile.clone());
 
     let is_headless = if cfg!(target_os = "linux") {
         std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err()

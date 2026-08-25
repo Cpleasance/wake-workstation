@@ -1,16 +1,48 @@
+# Build target
+target/
 /target
+Cargo.lock.d
 
-# IDE / editor
-.idea/
-.vscode/
+# Temporary and backup files
+*.tmp
+*.tmp.*
+*.temp
+*.bak
+*~
 *.swp
 *.swo
 
-# OS cruft
+# OS-specific files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
 
-# Stray build artifacts
+# IDE and editor configurations
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.claude/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts & binaries
 *.pdb
 *.exe
 *.dll.pdb
+*.dll
+*.so
+*.dylib
+*.rlib
+app.res
+config.export.json
+

@@ -64,7 +64,8 @@ impl WakeApp {
                     } else {
                         140.0
                     };
-                    let left_width = (ui.available_width() - right_width - metrics::SPACE_SM).max(100.0);
+                    let left_width =
+                        (ui.available_width() - right_width - metrics::SPACE_SM).max(100.0);
 
                     ui.allocate_ui_with_layout(
                         Vec2::new(left_width, ui.available_height()),
@@ -127,20 +128,18 @@ impl WakeApp {
             let height = 6.0;
 
             track_frame(0.0).show(ui, |ui| {
-                    let (rect, _response) = ui.allocate_exact_size(
-                        Vec2::new(avail_width, height),
-                        egui::Sense::hover(),
+                let (rect, _response) =
+                    ui.allocate_exact_size(Vec2::new(avail_width, height), egui::Sense::hover());
+                if fraction > 0.0 {
+                    let mut filled_rect = rect;
+                    filled_rect.max.x = rect.min.x + rect.width() * fraction;
+                    ui.painter().rect_filled(
+                        filled_rect,
+                        Rounding::same(metrics::ROUNDING_SM),
+                        bar_color,
                     );
-                    if fraction > 0.0 {
-                        let mut filled_rect = rect;
-                        filled_rect.max.x = rect.min.x + rect.width() * fraction;
-                        ui.painter().rect_filled(
-                            filled_rect,
-                            Rounding::same(metrics::ROUNDING_SM),
-                            bar_color,
-                        );
-                    }
-                });
+                }
+            });
         });
     }
 

@@ -1,4 +1,6 @@
-use crate::config::{export_config_json, import_config_json, save_config_to_path, validate_settings};
+use crate::config::{
+    export_config_json, import_config_json, save_config_to_path, validate_settings,
+};
 use crate::pipeline::LogLevel;
 use crate::ui::theme::{colors, flow_button, inset_frame, metrics};
 use crate::ui::toast::Toast;
@@ -21,12 +23,16 @@ impl WakeApp {
                 if file_written {
                     self.add_toast(Toast::success(format!(
                         "Config exported to clipboard & {}",
-                        export_path.file_name().unwrap_or_default().to_string_lossy()
+                        export_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
                     )));
                 } else {
                     self.add_toast(Toast::success("Configuration JSON copied to clipboard!"));
                 }
-                self.pipeline.log(LogLevel::Ok, "Configuration JSON exported");
+                self.pipeline
+                    .log(LogLevel::Ok, "Configuration JSON exported");
             }
             Err(e) => {
                 self.add_toast(Toast::error(format!("Export JSON failed: {}", e)));
@@ -53,7 +59,8 @@ impl WakeApp {
             Ok(app_cfg) => {
                 for (name, profile) in &app_cfg.profiles {
                     if let Err(e) = validate_settings(profile) {
-                        let err_msg = format!("Import validation error in profile '{}': {}", name, e);
+                        let err_msg =
+                            format!("Import validation error in profile '{}': {}", name, e);
                         self.settings_error = Some(err_msg.clone());
                         self.add_toast(Toast::error(err_msg));
                         return false;
@@ -65,15 +72,21 @@ impl WakeApp {
                 self.current_profile = self.settings_edit_profile.clone();
 
                 if let Err(e) = save_config_to_path(&self.app_config, &self.config_path) {
-                    self.add_toast(Toast::error(format!("Failed to save imported config: {}", e)));
+                    self.add_toast(Toast::error(format!(
+                        "Failed to save imported config: {}",
+                        e
+                    )));
                     return false;
                 }
 
                 self.pipeline.reset(&self.current_profile);
                 self.show_json_config_dialog = false;
                 self.settings_error = None;
-                self.add_toast(Toast::success("App configuration JSON imported successfully!"));
-                self.pipeline.log(LogLevel::Ok, "Configuration imported from JSON");
+                self.add_toast(Toast::success(
+                    "App configuration JSON imported successfully!",
+                ));
+                self.pipeline
+                    .log(LogLevel::Ok, "Configuration imported from JSON");
                 true
             }
             Err(e) => {
@@ -142,7 +155,8 @@ impl WakeApp {
                 let avail_w = ui.available_width();
                 if avail_w >= 440.0 {
                     ui.horizontal(|ui| {
-                        let copy_btn = flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
+                        let copy_btn =
+                            flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
                         if copy_btn.clicked() {
                             ctx.output_mut(|o| o.copied_text = self.json_config_input.clone());
                             self.add_toast(Toast::info("Copied JSON to clipboard"));
@@ -151,14 +165,22 @@ impl WakeApp {
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if self.json_config_is_export {
-                                let done_btn = flow_button(ui, "Done  [Esc]", colors::OK, colors::BTN_LABEL_ON_LIGHT);
+                                let done_btn = flow_button(
+                                    ui,
+                                    "Done  [Esc]",
+                                    colors::OK,
+                                    colors::BTN_LABEL_ON_LIGHT,
+                                );
                                 if done_btn.clicked() {
                                     self.show_json_config_dialog = false;
                                 }
                                 done_btn.on_hover_text("Close export dialog (Shortcut: Esc)");
                             } else {
                                 let mut trigger_import = false;
-                                if ui.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Enter)) {
+                                if ui.input(|i| {
+                                    (i.modifiers.command || i.modifiers.ctrl)
+                                        && i.key_pressed(egui::Key::Enter)
+                                }) {
                                     trigger_import = true;
                                 }
 
@@ -171,30 +193,48 @@ impl WakeApp {
                                 if apply_btn.clicked() || trigger_import {
                                     self.apply_imported_json();
                                 }
-                                apply_btn.on_hover_text("Validate and import JSON configuration (Shortcut: Ctrl+Enter)");
+                                apply_btn.on_hover_text(
+                                    "Validate and import JSON configuration (Shortcut: Ctrl+Enter)",
+                                );
 
                                 ui.add_space(metrics::SPACE_SM);
 
-                                let cancel_btn = flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
+                                let cancel_btn = flow_button(
+                                    ui,
+                                    "Cancel  [Esc]",
+                                    colors::BTN_BG,
+                                    colors::TEXT_MUTED,
+                                );
                                 if cancel_btn.clicked() {
                                     self.show_json_config_dialog = false;
                                 }
-                                cancel_btn.on_hover_text("Discard and close import dialog (Shortcut: Esc)");
+                                cancel_btn.on_hover_text(
+                                    "Discard and close import dialog (Shortcut: Esc)",
+                                );
                             }
                         });
                     });
                 } else {
                     ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
+                        ui.spacing_mut().item_spacing =
+                            Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
                         if self.json_config_is_export {
-                            let done_btn = flow_button(ui, "Done  [Esc]", colors::OK, colors::BTN_LABEL_ON_LIGHT);
+                            let done_btn = flow_button(
+                                ui,
+                                "Done  [Esc]",
+                                colors::OK,
+                                colors::BTN_LABEL_ON_LIGHT,
+                            );
                             if done_btn.clicked() {
                                 self.show_json_config_dialog = false;
                             }
                             done_btn.on_hover_text("Close export dialog (Shortcut: Esc)");
                         } else {
                             let mut trigger_import = false;
-                            if ui.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Enter)) {
+                            if ui.input(|i| {
+                                (i.modifiers.command || i.modifiers.ctrl)
+                                    && i.key_pressed(egui::Key::Enter)
+                            }) {
                                 trigger_import = true;
                             }
 
@@ -207,16 +247,25 @@ impl WakeApp {
                             if apply_btn.clicked() || trigger_import {
                                 self.apply_imported_json();
                             }
-                            apply_btn.on_hover_text("Validate and import JSON configuration (Shortcut: Ctrl+Enter)");
+                            apply_btn.on_hover_text(
+                                "Validate and import JSON configuration (Shortcut: Ctrl+Enter)",
+                            );
 
-                            let cancel_btn = flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
+                            let cancel_btn = flow_button(
+                                ui,
+                                "Cancel  [Esc]",
+                                colors::BTN_BG,
+                                colors::TEXT_MUTED,
+                            );
                             if cancel_btn.clicked() {
                                 self.show_json_config_dialog = false;
                             }
-                            cancel_btn.on_hover_text("Discard and close import dialog (Shortcut: Esc)");
+                            cancel_btn
+                                .on_hover_text("Discard and close import dialog (Shortcut: Esc)");
                         }
 
-                        let copy_btn = flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
+                        let copy_btn =
+                            flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
                         if copy_btn.clicked() {
                             ctx.output_mut(|o| o.copied_text = self.json_config_input.clone());
                             self.add_toast(Toast::info("Copied JSON to clipboard"));
