@@ -13,6 +13,22 @@ mod ui;
 #[cfg(test)]
 mod tests;
 
+// On hybrid-GPU laptops (integrated + discrete), Windows' automatic GPU
+// selection for an unrecognized/freshly-built executable can route it to a
+// GPU/driver combination where eframe's OpenGL (WGL) context negotiation
+// misbehaves -- observed here as the window being created but permanently
+// stuck at a degenerate ~5x5px size instead of its requested dimensions,
+// with no error reported. These exported symbols are the standard NVIDIA
+// Optimus / AMD PowerXpress hints that tell the OS to always run this
+// process on the high-performance discrete GPU instead of leaving the
+// choice to the driver's own heuristic.
+#[cfg(windows)]
+#[no_mangle]
+pub static NvOptimusEnablement: i32 = 1;
+#[cfg(windows)]
+#[no_mangle]
+pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
+
 use clap::Parser;
 use config::{default_config_path, load_config_from_path, validate_settings, HostProfile};
 use eframe::egui;
@@ -23,8 +39,8 @@ use ui::WakeApp;
 
 #[derive(Parser, Debug, Default, Clone)]
 #[command(
-    name = "wake-thinkstation",
-    about = "Antigravity Wake-on-LAN and Moonlight Stream orchestrator for ThinkStation & Remote Servers",
+    name = "wake-workstation",
+    about = "Wake-on-LAN and Moonlight Stream orchestrator for Remote Workstations & Gaming PCs",
     version
 )]
 pub struct CliArgs {
@@ -151,6 +167,37 @@ pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProf
     profile
 }
 
+/// Constructs the optimized desktop GUI `NativeOptions` with balanced viewport
+/// sizing (800x600 default, 520x360 minimum) and robust GPU/rendering settings
+/// for smooth window resizing, split-screen snapping, and high-DPI scaling.
+pub fn default_native_options() -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Wake Workstation")
+            .with_app_id("wake-workstation")
+            .with_inner_size([800.0, 600.0])
+            .with_min_inner_size([520.0, 360.0])
+            .with_resizable(true)
+            .with_active(true)
+            .with_decorations(true)
+            .with_transparent(false)
+            .with_maximize_button(true)
+            .with_minimize_button(true)
+            .with_close_button(true)
+            .with_drag_and_drop(false),
+        vsync: true,
+        multisampling: 0,
+        depth_buffer: 0,
+        stencil_buffer: 0,
+        hardware_acceleration: eframe::HardwareAcceleration::Preferred,
+        renderer: eframe::Renderer::Glow,
+        centered: true,
+        persist_window: false,
+        dithering: true,
+        ..Default::default()
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse();
 
@@ -174,10 +221,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app_cfg.set_profile(&app_cfg.active_profile.clone(), active_profile.clone());
 
     // Immediate remote power command execution
-    if let Some(action) = &args.power {
+    if let Some(ref action) = args.power {
         println!(
-            "Executing remote {} on {}@{}:{}...",
-            action.to_uppercase(),
+            "Executing remote power action '{}' on {}@{} (port {})...",
+            action,
             active_profile.thinkstation_user,
             active_profile.thinkstation_ip,
             active_profile.ssh_port
@@ -218,17 +265,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Launch Desktop GUI with eframe
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Wake ThinkStation")
-            .with_inner_size([780.0, 600.0])
-            .with_min_inner_size([700.0, 500.0]),
-        ..Default::default()
-    };
+    let native_options = default_native_options();
 
     let auto_launch = !args.no_moonlight;
     eframe::run_native(
-        "Wake ThinkStation",
+        "Wake Workstation",
         native_options,
         Box::new(move |cc| {
             Ok(Box::new(WakeApp::new(

@@ -1,11 +1,11 @@
-# Wake ThinkStation
+# Wake Workstation
 
 A cross-platform (Windows / Linux / macOS) Rust desktop + CLI utility that automates the entire "wake up my gaming PC and start streaming" sequence for [Moonlight](https://moonlight-stream.org/) / [Sunshine](https://github.com/LizardByte/Sunshine) game streaming setups.
 
-Instead of manually sending a Wake-on-LAN packet, waiting for the box to boot, and then opening Moonlight yourself, Wake ThinkStation sends the magic packet (directly over UDP broadcast, or via SSH to a Raspberry Pi gateway on the target's LAN), polls the host with ICMP ping, waits for its SSH daemon and Sunshine streaming port to come online, and then automatically launches your installed Moonlight client. It also exposes remote power actions (suspend / reboot / shutdown) over SSH, ships a GUI ([eframe](https://github.com/emilk/egui)/egui) and a scriptable `--cli` mode, and supports multiple named host profiles so you can point it at more than one machine.
+Instead of manually sending a Wake-on-LAN packet, waiting for the box to boot, and then opening Moonlight yourself, Wake Workstation sends the magic packet (directly over UDP broadcast, or via SSH to a Raspberry Pi gateway on the target's LAN), polls the host with ICMP ping, waits for its SSH daemon and Sunshine streaming port to come online, and then automatically launches your installed Moonlight client. It also exposes remote power actions (suspend / reboot / shutdown) over SSH, ships a GUI ([eframe](https://github.com/emilk/egui)/egui) and a scriptable `--cli` mode, and supports multiple named host profiles so you can point it at more than one machine.
 
 > [!NOTE]
-> Wake ThinkStation **orchestrates** an existing streaming setup — it does not install or configure Moonlight or Sunshine for you. Set those up on the client and target machine first.
+> Wake Workstation **orchestrates** an existing streaming setup — it does not install or configure Moonlight or Sunshine for you. Set those up on the client and target machine first.
 
 ## Prerequisites
 
@@ -25,29 +25,29 @@ On Linux, building an `eframe`/`egui`/`winit`-based GUI typically requires the s
 cargo build --release
 ```
 
-The compiled binary is written to `target/release/wake-thinkstation` (`.exe` on Windows). Run `cargo test` to run the test suite ([src/tests.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/tests.rs)).
+The compiled binary is written to `target/release/wake-workstation` (`.exe` on Windows). Run `cargo test` to run the test suite ([src/tests.rs](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/tests.rs)).
 
 ## Running
 
 **GUI mode** (default when a display is available):
 
 ```sh
-./target/release/wake-thinkstation
+./target/release/wake-workstation
 ```
 
 **CLI mode** — explicit, or auto-selected on Linux when no `DISPLAY`/`WAYLAND_DISPLAY` is set (e.g. over SSH):
 
 ```sh
-./target/release/wake-thinkstation --cli
+./target/release/wake-workstation --cli
 ```
 
 **Immediate remote power action** (no wake pipeline, exits after the command completes):
 
 ```sh
-./target/release/wake-thinkstation --power suspend
+./target/release/wake-workstation --power suspend
 ```
 
-On first run, a config file is auto-generated at the default location (see [Configuration](#configuration)) if none exists yet, populated with a `thinkstation` profile containing generic placeholder values — you must edit it (or override via flags) with your real target IP, MAC address, and SSH username before waking will work.
+On first run, a config file is auto-generated at the default location (see [Configuration](#configuration)) if none exists yet, populated with a `workstation` profile containing generic placeholder values — you must edit it (or override via flags) with your real target IP, MAC address, and SSH username before waking will work.
 
 ## CLI flag reference
 
@@ -79,8 +79,8 @@ All flags are optional; any value not supplied falls back to the active profile'
 
 Config file is JSON and lives at:
 
-- Windows: `%APPDATA%\wake-thinkstation\config.json`
-- Linux / macOS: `~/.config/wake-thinkstation/config.json`
+- Windows: `%APPDATA%\wake-workstation\config.json`
+- Linux / macOS: `~/.config/wake-workstation/config.json`
 
 (or wherever `--config <PATH>` points). It is created automatically on first run with placeholder values if it doesn't exist yet — see [`load_config_from_path`](file:///C:/Users/coryp/Downloads/wake-thinkstation-rust-src/src/config.rs#L224-L310).
 
@@ -88,9 +88,9 @@ The top level (`AppConfig`) holds an `active_profile` name and a map of named `H
 
 ```json
 {
-  "active_profile": "thinkstation",
+  "active_profile": "workstation",
   "profiles": {
-    "thinkstation": {
+    "workstation": {
       "pi_host": "192.168.1.10",
       "pi_user": "pi",
       "thinkstation_ip": "192.168.1.50",

@@ -1,5 +1,8 @@
 use crate::config::HostProfile;
-use crate::net::{check_ping, check_tcp_port, execute_power_action, format_latency, launch_moonlight, send_magic_packet, send_ssh_wol};
+use crate::net::{
+    check_ping, check_tcp_port, execute_power_action, format_latency, launch_moonlight,
+    play_system_sound, send_magic_packet, send_ssh_wol, SoundType,
+};
 use chrono::Local;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -351,7 +354,10 @@ impl PipelineState {
         }
 
         // Check overall timeout
-        if self.elapsed_secs >= config.max_wait_seconds && self.stage != Stage::Ready {
+        if self.elapsed_secs >= config.max_wait_seconds
+            && self.stage != Stage::Ready
+            && self.stage != Stage::Timeout
+        {
             self.stalled_stage = Some(self.stage);
             self.stage = Stage::Timeout;
             self.status_message = format!(
@@ -360,6 +366,7 @@ impl PipelineState {
             );
             self.log(LogLevel::Err, self.status_message.clone());
             self.is_finished = true;
+            play_system_sound(SoundType::Warning);
             return;
         }
 
@@ -458,6 +465,7 @@ impl PipelineState {
                         self.stage = Stage::Ready;
                         self.status_message = "Host is fully ready and online for game streaming!".to_string();
                         self.is_finished = true;
+                        play_system_sound(SoundType::Success);
 
                         if auto_launch_moonlight && !self.auto_launched_moonlight {
                             self.auto_launched_moonlight = true;
@@ -644,7 +652,7 @@ pub fn run_cli_pipeline(config: HostProfile, auto_launch_moonlight: bool) -> Res
 
     println!(
         "\n======================================================\n\
-         🚀 WAKE THINKSTATION (Rust CLI)\n\
+         🚀 WAKE WORKSTATION (Rust CLI)\n\
          Target:      {} ({})\n\
          MAC:         {}\n\
          Max Timeout: {}s\n\

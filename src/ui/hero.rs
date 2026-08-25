@@ -9,23 +9,19 @@ impl WakeApp {
             let fraction = self.pipeline.progress_fraction();
             let pct = (fraction * 100.0).round() as u32;
 
-            ui.horizontal(|ui| {
-                let status_color = match self.pipeline.stage {
-                    Stage::Ready => colors::OK,
-                    Stage::Standby => colors::WARN,
-                    Stage::Timeout => colors::ERR,
-                    _ => colors::ACCENT,
-                };
+            let status_color = match self.pipeline.stage {
+                Stage::Ready => colors::OK,
+                Stage::Standby => colors::WARN,
+                Stage::Timeout => colors::ERR,
+                _ => colors::ACCENT,
+            };
 
-                ui.label(
-                    RichText::new(&self.pipeline.status_message)
-                        .size(metrics::FS_BODY)
-                        .strong()
-                        .color(status_color),
-                )
-                .on_hover_text("Current pipeline operation status");
+            let avail_width = ui.available_width();
+            const HERO_STACK_WIDTH: f32 = 480.0;
 
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if avail_width < HERO_STACK_WIDTH {
+                // Stacked responsive layout for narrow viewports
+                ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(format!("{}  {}%", self.pipeline.stage.name(), pct))
                             .size(metrics::FS_LABEL)
@@ -47,7 +43,70 @@ impl WakeApp {
                         .on_hover_text("Latest ICMP ping RTT latency");
                     }
                 });
-            });
+
+                ui.add_space(metrics::SPACE_XS);
+
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(&self.pipeline.status_message)
+                            .size(metrics::FS_BODY)
+                            .strong()
+                            .color(status_color),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Wrap),
+                )
+                .on_hover_text("Current pipeline operation status");
+            } else {
+                // Single-line responsive layout: status message on left with wrap, stage & latency pinned right
+                ui.horizontal(|ui| {
+                    let right_width = if self.pipeline.last_latency.is_some() {
+                        200.0
+                    } else {
+                        140.0
+                    };
+                    let left_width = (ui.available_width() - right_width - metrics::SPACE_SM).max(100.0);
+
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(left_width, ui.available_height()),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&self.pipeline.status_message)
+                                        .size(metrics::FS_BODY)
+                                        .strong()
+                                        .color(status_color),
+                                )
+                                .wrap_mode(egui::TextWrapMode::Wrap),
+                            )
+                            .on_hover_text("Current pipeline operation status");
+                        },
+                    );
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("{}  {}%", self.pipeline.stage.name(), pct))
+                                .size(metrics::FS_LABEL)
+                                .monospace()
+                                .strong()
+                                .color(status_color),
+                        )
+                        .on_hover_text("Pipeline stage execution progress");
+
+                        if let Some(lat) = self.pipeline.last_latency {
+                            ui.add_space(metrics::SPACE_SM);
+                            ui.label(
+                                RichText::new(format!("{:.1} ms", lat))
+                                    .size(metrics::FS_SMALL)
+                                    .monospace()
+                                    .strong()
+                                    .color(colors::OK),
+                            )
+                            .on_hover_text("Latest ICMP ping RTT latency");
+                        }
+                    });
+                });
+            }
 
             // Live mini RTT Latency Sparkline Graph using ui.painter()
             if !self.pipeline.latency_history.is_empty() {

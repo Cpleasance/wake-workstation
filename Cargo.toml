@@ -1,13 +1,13 @@
 [package]
-name = "wake-thinkstation-rust"
+name = "wake-workstation"
 version = "0.1.0"
 edition = "2021"
 authors = ["Cory Pleasance"]
 license = "MIT"
-description = "Wake-on-LAN + SSH + Moonlight streaming orchestrator for a remote gaming PC"
+description = "Wake-on-LAN + SSH + Moonlight streaming orchestrator for remote workstations & gaming PCs"
 
 [[bin]]
-name = "wake-thinkstation"
+name = "wake-workstation"
 path = "src/main.rs"
 
 [dependencies]

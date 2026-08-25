@@ -62,16 +62,16 @@ impl WakeApp {
         }
 
         let screen = ctx.screen_rect();
-        let modal_h = (screen.height() - 80.0).clamp(380.0, 660.0);
-        let modal_w = (screen.width() - 80.0).clamp(420.0, 620.0);
-        let scroll_h = (modal_h - 190.0).max(180.0);
+        let modal_w = (screen.width() - 40.0).clamp(420.0, 780.0);
+        let modal_h = (screen.height() - 40.0).clamp(360.0, 680.0);
+        let scroll_h = (modal_h - 180.0).max(140.0);
 
         egui::Window::new("Configuration & Target Profiles")
             .collapsible(false)
             .resizable(true)
             .default_size(Vec2::new(modal_w, modal_h))
-            .min_size(Vec2::new(380.0, 340.0))
-            .max_size(Vec2::new(screen.width() - 20.0, screen.height() - 20.0))
+            .min_size(Vec2::new(360.0, 280.0))
+            .max_size(Vec2::new(screen.width() - 16.0, screen.height() - 16.0))
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.add_space(2.0);
@@ -100,7 +100,8 @@ impl WakeApp {
                 }
 
                 // Settings Tabs
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_XS, metrics::SPACE_XS);
                     let tabs = ["Target Host", "Gateway & WOL", "Ports & Timing"];
                     for (idx, name) in tabs.iter().enumerate() {
                         let selected = self.settings_tab == idx;
@@ -125,7 +126,6 @@ impl WakeApp {
                         {
                             self.settings_tab = idx;
                         }
-                        ui.add_space(metrics::SPACE_XS);
                     }
                 });
 
@@ -133,6 +133,7 @@ impl WakeApp {
 
                 egui::ScrollArea::vertical()
                     .max_height(scroll_h)
+                    .auto_shrink([false, false])
                     .show(ui, |ui| match self.settings_tab {
                         0 => self.render_settings_tab_target(ui),
                         1 => self.render_settings_tab_gateway(ui),
@@ -140,27 +141,52 @@ impl WakeApp {
                         _ => {}
                     });
 
-                ui.add_space(metrics::SPACE_LG);
+                ui.add_space(metrics::SPACE_MD);
 
                 // Modal Footer
-                ui.horizontal(|ui| {
-                    let exp_btn = flow_button(ui, "📤 Export Config (JSON)", colors::BTN_BG, colors::TEXT);
-                    if exp_btn.clicked() {
-                        self.export_config_json(ctx);
-                    }
-                    exp_btn.on_hover_text("Export entire configuration to JSON string, file & clipboard");
+                let avail_w = ui.available_width();
+                if avail_w >= 540.0 {
+                    ui.horizontal(|ui| {
+                        let exp_btn = flow_button(ui, "📤 Export Config (JSON)", colors::BTN_BG, colors::TEXT);
+                        if exp_btn.clicked() {
+                            self.export_config_json(ctx);
+                        }
+                        exp_btn.on_hover_text("Export entire configuration to JSON string, file & clipboard");
 
-                    ui.add_space(metrics::SPACE_XS);
+                        ui.add_space(metrics::SPACE_XS);
 
-                    let imp_btn = flow_button(ui, "📥 Import Config (JSON)", colors::BTN_BG, colors::TEXT);
-                    if imp_btn.clicked() {
-                        self.open_import_config_dialog(ctx);
-                    }
-                    imp_btn.on_hover_text("Import configuration from raw JSON text or clipboard");
+                        let imp_btn = flow_button(ui, "📥 Import Config (JSON)", colors::BTN_BG, colors::TEXT);
+                        if imp_btn.clicked() {
+                            self.open_import_config_dialog(ctx);
+                        }
+                        imp_btn.on_hover_text("Import configuration from raw JSON text or clipboard");
 
-                    ui.add_space(metrics::SPACE_SM);
+                        ui.add_space(metrics::SPACE_SM);
 
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let save_btn = flow_button(
+                                ui,
+                                "Save & Apply  [Ctrl+S]",
+                                colors::OK,
+                                colors::BTN_LABEL_ON_LIGHT,
+                            );
+                            if save_btn.clicked() {
+                                self.save_settings_from_modal();
+                            }
+                            save_btn.on_hover_text("Validate and save current profile settings (Ctrl+S)");
+
+                            ui.add_space(metrics::SPACE_SM);
+
+                            let cancel_btn = flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
+                            if cancel_btn.clicked() {
+                                self.show_settings = false;
+                            }
+                            cancel_btn.on_hover_text("Discard edits and close modal (Esc)");
+                        });
+                    });
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
                         let save_btn = flow_button(
                             ui,
                             "Save & Apply  [Ctrl+S]",
@@ -172,20 +198,31 @@ impl WakeApp {
                         }
                         save_btn.on_hover_text("Validate and save current profile settings (Ctrl+S)");
 
-                        ui.add_space(metrics::SPACE_SM);
-
                         let cancel_btn = flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED);
                         if cancel_btn.clicked() {
                             self.show_settings = false;
                         }
                         cancel_btn.on_hover_text("Discard edits and close modal (Esc)");
+
+                        let exp_btn = flow_button(ui, "📤 Export JSON", colors::BTN_BG, colors::TEXT);
+                        if exp_btn.clicked() {
+                            self.export_config_json(ctx);
+                        }
+                        exp_btn.on_hover_text("Export entire configuration to JSON string, file & clipboard");
+
+                        let imp_btn = flow_button(ui, "📥 Import JSON", colors::BTN_BG, colors::TEXT);
+                        if imp_btn.clicked() {
+                            self.open_import_config_dialog(ctx);
+                        }
+                        imp_btn.on_hover_text("Import configuration from raw JSON text or clipboard");
                     });
-                });
+                }
             });
     }
 
     fn render_profile_management_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
             ui.label(
                 RichText::new("Active Profile:")
                     .size(metrics::FS_LABEL)
@@ -220,8 +257,6 @@ impl WakeApp {
                 }
             }
 
-            ui.add_space(metrics::SPACE_SM);
-
             if ui
                 .button(RichText::new("+ New").size(metrics::FS_LABEL).color(colors::OK))
                 .on_hover_text("Create a new host configuration profile")
@@ -236,11 +271,19 @@ impl WakeApp {
                 .on_hover_text("Duplicate current profile settings into a new profile")
                 .clicked()
             {
-                let dup_name = format!("{}-copy", self.settings_profile_name);
-                self.app_config.set_profile(&dup_name, self.settings_edit_profile.clone());
-                self.settings_profile_name = dup_name.clone();
-                self.add_toast(Toast::success(format!("Profile duplicated as '{}'", dup_name)));
-                let _ = save_config_to_path(&self.app_config, &self.config_path);
+                match validate_settings(&self.settings_edit_profile) {
+                    Ok(()) => {
+                        let dup_name = format!("{}-copy", self.settings_profile_name);
+                        self.app_config.set_profile(&dup_name, self.settings_edit_profile.clone());
+                        self.settings_profile_name = dup_name.clone();
+                        self.add_toast(Toast::success(format!("Profile duplicated as '{}'", dup_name)));
+                        let _ = save_config_to_path(&self.app_config, &self.config_path);
+                    }
+                    Err(err) => {
+                        self.settings_error = Some(err.clone());
+                        self.add_toast(Toast::error(format!("Cannot duplicate invalid profile: {}", err)));
+                    }
+                }
             }
 
             let can_delete = self.app_config.profiles.len() > 1;
@@ -269,8 +312,6 @@ impl WakeApp {
                     self.add_toast(Toast::warning(format!("Profile '{}' deleted!", deleted_name)));
                 }
             }
-
-            ui.add_space(metrics::SPACE_SM);
 
             if ui
                 .button(RichText::new("📤 Export JSON").size(metrics::FS_LABEL).color(colors::TEXT))
@@ -354,6 +395,190 @@ impl WakeApp {
                     "LAN subnet broadcast address for WOL magic packet (e.g. 192.168.1.255)",
                 );
             });
+
+        ui.add_space(metrics::SPACE_MD);
+        ui.separator();
+        ui.add_space(metrics::SPACE_SM);
+
+        ui.horizontal(|ui| {
+            let is_testing = matches!(
+                self.reachability_state,
+                crate::ui::ReachabilityState::Testing { .. }
+            );
+            let btn_text = if is_testing {
+                "⏳ Testing Reachability..."
+            } else {
+                "⚡ Test Ping / Check Reachability"
+            };
+
+            let test_btn = ui.add_enabled(
+                !is_testing,
+                egui::Button::new(
+                    RichText::new(btn_text)
+                        .size(metrics::FS_BODY)
+                        .strong()
+                        .color(if is_testing {
+                            colors::TEXT_DIM
+                        } else {
+                            colors::ACCENT
+                        }),
+                )
+                .fill(colors::CARD_BG)
+                .stroke(Stroke::new(
+                    1.0_f32,
+                    if is_testing {
+                        colors::BORDER
+                    } else {
+                        colors::ACCENT
+                    },
+                ))
+                .rounding(Rounding::same(metrics::ROUNDING_MD)),
+            );
+
+            if test_btn.clicked() {
+                self.trigger_reachability_test();
+            }
+            test_btn.on_hover_text("Send an immediate ICMP ping and test the target SSH port to verify reachability without starting the full wake pipeline");
+        });
+
+        self.render_reachability_status_card(ui);
+    }
+
+    pub fn trigger_reachability_test(&mut self) {
+        let host = self.settings_edit_profile.thinkstation_ip.trim().to_string();
+        if host.is_empty() {
+            self.add_toast(Toast::warning("Please enter a Target IP / Host to test"));
+            return;
+        }
+
+        let ssh_port = self.settings_edit_profile.ssh_port;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.reachability_rx = Some(rx);
+        self.reachability_state = crate::ui::ReachabilityState::Testing {
+            host: host.clone(),
+            started_at: std::time::Instant::now(),
+        };
+
+        let host_for_thread = host;
+        std::thread::spawn(move || {
+            let (ping_ok, latency) = crate::net::check_ping(&host_for_thread, 2);
+            let ssh_ok = if ping_ok && ssh_port > 0 {
+                crate::net::check_tcp_port(&host_for_thread, ssh_port, 800)
+            } else {
+                false
+            };
+            let _ = tx.send((host_for_thread, ping_ok, latency, ssh_port, ssh_ok));
+        });
+    }
+
+    fn render_reachability_status_card(&self, ui: &mut egui::Ui) {
+        match &self.reachability_state {
+            crate::ui::ReachabilityState::Idle => {}
+            crate::ui::ReachabilityState::Testing { host, .. } => {
+                ui.add_space(metrics::SPACE_SM);
+                Frame::none()
+                    .fill(colors::CARD_BG)
+                    .stroke(Stroke::new(1.0_f32, colors::BORDER_HI))
+                    .rounding(Rounding::same(metrics::ROUNDING_MD))
+                    .inner_margin(Vec2::new(12.0, 8.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.add_space(metrics::SPACE_XS);
+                            ui.label(
+                                RichText::new(format!(
+                                    "Testing reachability to '{}' (ICMP ping & SSH)...",
+                                    host
+                                ))
+                                .size(metrics::FS_LABEL)
+                                .color(colors::TEXT_MUTED),
+                            );
+                        });
+                    });
+            }
+            crate::ui::ReachabilityState::Result {
+                host,
+                ping_ok,
+                latency_ms,
+                ssh_port,
+                ssh_ok,
+                checked_at,
+            } => {
+                ui.add_space(metrics::SPACE_SM);
+                let elapsed = checked_at.elapsed().as_secs();
+                let time_str = if elapsed == 0 {
+                    "just now".to_string()
+                } else {
+                    format!("{}s ago", elapsed)
+                };
+
+                let (bg, border, fg, icon, title, detail) = if *ping_ok {
+                    let lat_str = crate::net::format_latency(*latency_ms);
+                    let ssh_desc = if *ssh_ok {
+                        format!("SSH port {} is OPEN and responding.", ssh_port)
+                    } else {
+                        format!("SSH port {} is CLOSED / not responding.", ssh_port)
+                    };
+                    (
+                        colors::OK_BG,
+                        colors::OK,
+                        colors::OK,
+                        "✔",
+                        format!("Host '{}' is online & reachable!", host),
+                        format!("ICMP RTT: {}  •  {}", lat_str, ssh_desc),
+                    )
+                } else {
+                    (
+                        colors::ERR_BG,
+                        colors::ERR,
+                        colors::ERR,
+                        "✖",
+                        format!("Host '{}' is unreachable", host),
+                        "No ICMP echo reply received. Machine may be sleeping, offline, or ICMP is disabled.".to_string(),
+                    )
+                };
+
+                Frame::none()
+                    .fill(bg)
+                    .stroke(Stroke::new(1.0_f32, border))
+                    .rounding(Rounding::same(metrics::ROUNDING_MD))
+                    .inner_margin(Vec2::new(12.0, 8.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(icon)
+                                    .size(metrics::FS_BODY)
+                                    .strong()
+                                    .color(fg),
+                            );
+                            ui.add_space(metrics::SPACE_XS);
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new(&title)
+                                            .size(metrics::FS_LABEL)
+                                            .strong()
+                                            .color(fg),
+                                    );
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.label(
+                                            RichText::new(&time_str)
+                                                .size(metrics::FS_SMALL)
+                                                .color(colors::TEXT_DIM),
+                                        );
+                                    });
+                                });
+                                ui.add_space(2.0);
+                                ui.label(
+                                    RichText::new(&detail)
+                                        .size(metrics::FS_SMALL)
+                                        .color(colors::TEXT),
+                                );
+                            });
+                        });
+                    });
+            }
+        }
     }
 
     fn render_settings_tab_gateway(&mut self, ui: &mut egui::Ui) {

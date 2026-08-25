@@ -1,7 +1,87 @@
 use regex::Regex;
 use std::net::{TcpStream, ToSocketAddrs, UdpSocket};
 use std::process::Command;
+use std::sync::OnceLock;
 use std::time::Duration;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Windows-only process creation flag that stops a spawned console-subsystem
+/// child (ping, ssh, wakeonlan, Moonlight's launcher, etc.) from popping up
+/// its own flashing console window. Without this, every child process
+/// allocates a fresh console because this app itself now runs as a
+/// GUI-subsystem process with no console of its own to inherit.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoundType {
+    Success,
+    Warning,
+    Error,
+}
+
+#[cfg(windows)]
+#[allow(dead_code)]
+mod win_sys {
+    pub const MB_OK: u32 = 0x00000000;
+    pub const MB_ICONHAND: u32 = 0x00000010;
+    pub const MB_ICONEXCLAMATION: u32 = 0x00000030;
+    pub const MB_ICONASTERISK: u32 = 0x00000040;
+
+    pub const SW_SHOWNORMAL: i32 = 1;
+
+    #[link(name = "user32")]
+    extern "system" {
+        pub fn MessageBeep(uType: u32) -> i32;
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        pub fn ShellExecuteW(
+            hwnd: *mut std::ffi::c_void,
+            lpOperation: *const u16,
+            lpFile: *const u16,
+            lpParameters: *const u16,
+            lpDirectory: *const u16,
+            nShowCmd: i32,
+        ) -> *mut std::ffi::c_void;
+    }
+}
+
+/// Plays a lightweight native Windows system chime asynchronously without blocking the calling thread.
+/// On non-Windows platforms, this is a no-op.
+pub fn play_system_sound(sound: SoundType) {
+    #[cfg(windows)]
+    {
+        std::thread::spawn(move || {
+            let u_type = match sound {
+                SoundType::Success => win_sys::MB_ICONASTERISK,
+                SoundType::Warning => win_sys::MB_ICONEXCLAMATION,
+                SoundType::Error => win_sys::MB_ICONHAND,
+            };
+            unsafe {
+                win_sys::MessageBeep(u_type);
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = sound;
+    }
+}
+
+/// `Command::new` that additionally suppresses the console window a child
+/// process would otherwise pop up on Windows. Behaves exactly like
+/// `Command::new` on other platforms.
+fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
 
 /// Validate that a value which will be interpolated into a remote shell
 /// command string (or passed as an SSH connection target) contains only a
@@ -36,8 +116,8 @@ pub fn validate_host_token(value: &str, field_name: &str) -> Result<(), String> 
     Ok(())
 }
 
-/// Generate pure Rust 102-byte WOL Magic Packet payload.
-pub fn create_magic_packet(mac: &str) -> Result<[u8; 102], String> {
+/// Parse MAC address string into a 6-byte hardware address array.
+pub fn parse_mac_bytes(mac: &str) -> Result<[u8; 6], String> {
     let mac = mac.trim();
     if mac.is_empty() {
         return Err("MAC address cannot be empty.".to_string());
@@ -78,6 +158,12 @@ pub fn create_magic_packet(mac: &str) -> Result<[u8; 102], String> {
         mac_bytes[i] = u8::from_str_radix(&clean_mac[i * 2..i * 2 + 2], 16)
             .map_err(|e| format!("Invalid hex digit in MAC address: {}", e))?;
     }
+    Ok(mac_bytes)
+}
+
+/// Generate pure Rust 102-byte WOL Magic Packet payload.
+pub fn create_magic_packet(mac: &str) -> Result<[u8; 102], String> {
+    let mac_bytes = parse_mac_bytes(mac)?;
 
     let mut packet = [0u8; 102];
     // 6 bytes of 0xFF
@@ -87,7 +173,6 @@ pub fn create_magic_packet(mac: &str) -> Result<[u8; 102], String> {
         let offset = 6 + rep * 6;
         packet[offset..offset + 6].copy_from_slice(&mac_bytes);
     }
-
     Ok(packet)
 }
 
@@ -148,7 +233,7 @@ pub fn send_ssh_wol(
 
     let wol_cmd = format!("wakeonlan -i {} {}", broadcast_ip, mac.trim());
     let port_str = pi_ssh_port.to_string();
-    let output = Command::new("ssh")
+    let output = hidden_command("ssh")
         .args([
             "-o",
             "StrictHostKeyChecking=accept-new",
@@ -181,6 +266,12 @@ pub fn send_ssh_wol(
     }
 }
 
+static RE_SUB_MS: OnceLock<Regex> = OnceLock::new();
+static RE_TIME: OnceLock<Regex> = OnceLock::new();
+static RE_AVG: OnceLock<Regex> = OnceLock::new();
+static RE_WIN_AVG: OnceLock<Regex> = OnceLock::new();
+static RE_FALLBACK: OnceLock<Regex> = OnceLock::new();
+
 /// Parse ICMP round-trip latency (RTT in ms) from ping stdout.
 pub fn parse_ping_latency(output: &str) -> Option<f32> {
     if output.trim().is_empty() {
@@ -188,16 +279,20 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
     }
 
     // Windows / localized sub-millisecond format "time<1ms", "zeit<1ms", "temps<1ms", "время<1мс", "时间<1ms", etc.
-    let re_sub_ms = Regex::new(r"(?i)<\s*1\s*(?:ms|мс)").ok()?;
+    let re_sub_ms = RE_SUB_MS.get_or_init(|| {
+        Regex::new(r"(?i)<\s*1\s*(?:ms|мс)").expect("valid ping sub-ms regex")
+    });
     if re_sub_ms.is_match(output) {
         return Some(0.5);
     }
 
     // Standard localized reply line "time=12.4 ms", "zeit=12ms", "temps=12 ms", "tiempo=12ms", "tiempo < 1 ms", "czas=12ms", "tijd=12ms", "время=12мс", "时间=12ms", etc.
-    let re_time = Regex::new(
-        r"(?i)(?:time|zeit|temps|tiempo|tempo|czas|tijd|время|时间|時間)\s*[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
-    )
-    .ok()?;
+    let re_time = RE_TIME.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:time|zeit|temps|tiempo|tempo|czas|tijd|время|时间|時間)\s*[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
+        )
+        .expect("valid ping time regex")
+    });
     if let Some(caps) = re_time.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
@@ -209,10 +304,12 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
     // Linux / macOS / BSD / BusyBox summary stats:
     // "rtt min/avg/max/mdev = 12.3/14.5/..." or "round-trip min/avg/max/stddev = ..."
     // or BusyBox "round-trip min/avg/max = ..."
-    let re_avg = Regex::new(
-        r"(?i)(?:rtt|round-trip|[a-z0-9_-]+)\s+(?:min/avg/max(?:/[a-z0-9_-]+)?|min/avg/max/std-?dev|min/avg/max)\s*=\s*[0-9.]+/([0-9.]+)",
-    )
-    .ok()?;
+    let re_avg = RE_AVG.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:rtt|round-trip|[a-z0-9_-]+)\s+(?:min/avg/max(?:/[a-z0-9_-]+)?|min/avg/max/std-?dev|min/avg/max)\s*=\s*[0-9.]+/([0-9.]+)",
+        )
+        .expect("valid ping avg regex")
+    });
     if let Some(caps) = re_avg.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
@@ -225,10 +322,12 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
     // English "Average = 12ms", German "Mittelwert = 12ms" / "Durchschnitt = 12ms", French "Moyenne = 12ms",
     // Spanish "Media = 12ms" / "Promedio = 12ms", Portuguese "Média = 12ms", Italian "Medio = 12ms",
     // Polish "Średni = 12ms", Dutch "Gemiddelde = 12ms", Russian "Среднее = 12мс", Chinese/Japanese "平均 = 12ms"
-    let re_win_avg = Regex::new(
-        r"(?i)(?:Average|Mittelwert|Durchschnitt|Moyenne|Media|Promedio|Média|Medio|Średni|Gemiddelde|Среднее|平均)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
-    )
-    .ok()?;
+    let re_win_avg = RE_WIN_AVG.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:Average|Mittelwert|Durchschnitt|Moyenne|Media|Promedio|Média|Medio|Średni|Gemiddelde|Среднее|平均)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)?",
+        )
+        .expect("valid ping win-avg regex")
+    });
     if let Some(caps) = re_win_avg.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
@@ -238,7 +337,10 @@ pub fn parse_ping_latency(output: &str) -> Option<f32> {
     }
 
     // Generic fallback: match any numeric value following `=` or `<` and followed by `ms` or `мс`
-    let re_fallback = Regex::new(r"(?i)[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)").ok()?;
+    let re_fallback = RE_FALLBACK.get_or_init(|| {
+        Regex::new(r"(?i)[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:ms|мс)")
+            .expect("valid ping fallback regex")
+    });
     if let Some(caps) = re_fallback.captures(output) {
         if let Some(m) = caps.get(1) {
             if let Ok(val) = m.as_str().parse::<f32>() {
@@ -263,18 +365,18 @@ pub fn format_latency(latency_ms: Option<f32>) -> String {
 /// Cross-platform ICMP ping with RTT latency parsing.
 pub fn check_ping(host: &str, timeout_secs: u64) -> (bool, Option<f32>) {
     let host = host.trim();
-    if host.is_empty() {
+    if host.is_empty() || validate_host_token(host, "Ping host").is_err() {
         return (false, None);
     }
 
     let result = if cfg!(windows) {
         let timeout_ms = (timeout_secs * 1000).to_string();
-        Command::new("ping")
+        hidden_command("ping")
             .args(["-n", "1", "-w", &timeout_ms, host])
             .output()
     } else {
         let timeout_s = timeout_secs.max(1).to_string();
-        Command::new("ping")
+        hidden_command("ping")
             .args(["-c", "1", "-W", &timeout_s, host])
             .output()
     };
@@ -398,7 +500,7 @@ pub fn execute_power_action(
     let target = format!("{}@{}", user.trim(), host.trim());
     let port_str = port.to_string();
 
-    let output = Command::new("ssh")
+    let output = hidden_command("ssh")
         .args([
             "-o",
             "StrictHostKeyChecking=accept-new",
@@ -481,12 +583,320 @@ fn binary_in_path(name: &str) -> bool {
     false
 }
 
+/// Collect standard Moonlight executable candidate paths on Windows.
+#[cfg(windows)]
+pub fn get_windows_moonlight_exe_paths() -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+    let program_files_x86 =
+        std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+    let program_w6432 = std::env::var("ProgramW6432").ok();
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let app_data = std::env::var("APPDATA").unwrap_or_default();
+    let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+    let program_data =
+        std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+
+    // Standard Program Files installs
+    candidates.push(
+        std::path::PathBuf::from(&program_files)
+            .join("Moonlight Game Streaming")
+            .join("Moonlight.exe"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&program_files_x86)
+            .join("Moonlight Game Streaming")
+            .join("Moonlight.exe"),
+    );
+    if let Some(w64) = program_w6432 {
+        candidates.push(
+            std::path::PathBuf::from(&w64)
+                .join("Moonlight Game Streaming")
+                .join("Moonlight.exe"),
+        );
+    }
+
+    // LocalAppData user installs
+    if !local_app_data.is_empty() {
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Programs")
+                .join("Moonlight Game Streaming")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Moonlight Game Streaming")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Programs")
+                .join("Moonlight")
+                .join("Moonlight.exe"),
+        );
+
+        // WinGet Links and WindowsApps
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Links")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Links")
+                .join("moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Microsoft")
+                .join("WindowsApps")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&local_app_data)
+                .join("Microsoft")
+                .join("WindowsApps")
+                .join("moonlight.exe"),
+        );
+    }
+
+    // Scoop shims and apps (User and Global)
+    if !user_profile.is_empty() {
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("scoop")
+                .join("shims")
+                .join("moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("scoop")
+                .join("shims")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("scoop")
+                .join("apps")
+                .join("moonlight")
+                .join("current")
+                .join("Moonlight.exe"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("scoop")
+                .join("apps")
+                .join("moonlight")
+                .join("current")
+                .join("moonlight.exe"),
+        );
+    }
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("scoop")
+            .join("shims")
+            .join("moonlight.exe"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("scoop")
+            .join("shims")
+            .join("Moonlight.exe"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("scoop")
+            .join("apps")
+            .join("moonlight")
+            .join("current")
+            .join("Moonlight.exe"),
+    );
+    candidates.push(std::path::PathBuf::from("C:\\scoop\\shims\\moonlight.exe"));
+    candidates.push(std::path::PathBuf::from(
+        "C:\\scoop\\apps\\moonlight\\current\\Moonlight.exe",
+    ));
+
+    // Chocolatey
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("chocolatey")
+            .join("bin")
+            .join("moonlight.exe"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("chocolatey")
+            .join("bin")
+            .join("Moonlight.exe"),
+    );
+
+    // Roaming AppData
+    if !app_data.is_empty() {
+        candidates.push(
+            std::path::PathBuf::from(&app_data)
+                .join("Moonlight Game Streaming")
+                .join("Moonlight.exe"),
+        );
+    }
+
+    candidates
+}
+
+/// Collect Desktop and Start Menu shortcut (.lnk) candidate paths on Windows.
+#[cfg(windows)]
+pub fn get_windows_moonlight_lnk_paths() -> Vec<std::path::PathBuf> {
+    let mut candidates = Vec::new();
+
+    let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
+    let public_profile =
+        std::env::var("PUBLIC").unwrap_or_else(|_| "C:\\Users\\Public".to_string());
+    let app_data = std::env::var("APPDATA").unwrap_or_default();
+    let program_data =
+        std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+
+    // User Desktop
+    if !user_profile.is_empty() {
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("Desktop")
+                .join("Moonlight.lnk"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("Desktop")
+                .join("Moonlight Game Streaming.lnk"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&user_profile)
+                .join("Desktop")
+                .join("moonlight.lnk"),
+        );
+    }
+
+    // Public / All Users Desktop
+    candidates.push(
+        std::path::PathBuf::from(&public_profile)
+            .join("Desktop")
+            .join("Moonlight.lnk"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&public_profile)
+            .join("Desktop")
+            .join("Moonlight Game Streaming.lnk"),
+    );
+    candidates.push(std::path::PathBuf::from("C:\\Users\\Public\\Desktop\\Moonlight.lnk"));
+    candidates.push(std::path::PathBuf::from(
+        "C:\\Users\\Public\\Desktop\\Moonlight Game Streaming.lnk",
+    ));
+
+    // User Start Menu
+    if !app_data.is_empty() {
+        candidates.push(
+            std::path::PathBuf::from(&app_data)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+                .join("Moonlight Game Streaming")
+                .join("Moonlight.lnk"),
+        );
+        candidates.push(
+            std::path::PathBuf::from(&app_data)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+                .join("Moonlight.lnk"),
+        );
+    }
+
+    // All Users / ProgramData Start Menu
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Moonlight Game Streaming")
+            .join("Moonlight.lnk"),
+    );
+    candidates.push(
+        std::path::PathBuf::from(&program_data)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("Moonlight.lnk"),
+    );
+
+    candidates
+}
+
+/// Helper to launch a Windows shortcut (.lnk file) using ShellExecuteW,
+/// falling back to explorer.exe or cmd start if needed.
+#[cfg(windows)]
+pub fn launch_lnk_file(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    use std::os::windows::ffi::OsStrExt;
+    let wide_path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let wide_open: Vec<u16> = std::ffi::OsStr::new("open")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let res = unsafe {
+        win_sys::ShellExecuteW(
+            std::ptr::null_mut(),
+            wide_open.as_ptr(),
+            wide_path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            win_sys::SW_SHOWNORMAL,
+        )
+    };
+
+    // ShellExecute returns HINSTANCE > 32 on success
+    if (res as isize) > 32 {
+        return true;
+    }
+
+    // Fallback 1: explorer.exe <path>
+    if hidden_command("explorer.exe").arg(path).spawn().is_ok() {
+        return true;
+    }
+
+    // Fallback 2: cmd.exe /c start "" "<path>"
+    if hidden_command("cmd.exe")
+        .args(["/c", "start", "", &path.to_string_lossy()])
+        .spawn()
+        .is_ok()
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Cross-platform Moonlight launcher.
 pub fn launch_moonlight() -> bool {
     let candidates = ["moonlight", "Moonlight", "moonlight.exe", "Moonlight.exe"];
 
     for cand in candidates {
-        if binary_in_path(cand) && Command::new(cand).spawn().is_ok() {
+        if binary_in_path(cand) && hidden_command(cand).spawn().is_ok() {
             return true;
         }
     }
@@ -494,12 +904,12 @@ pub fn launch_moonlight() -> bool {
     if cfg!(target_os = "linux") {
         // Flatpak
         if binary_in_path("flatpak") {
-            let check = Command::new("flatpak")
+            let check = hidden_command("flatpak")
                 .args(["info", "com.moonlight_stream.Moonlight"])
                 .output();
             if let Ok(res) = check {
                 if res.status.success()
-                    && Command::new("flatpak")
+                    && hidden_command("flatpak")
                         .args(["run", "com.moonlight_stream.Moonlight"])
                         .spawn()
                         .is_ok()
@@ -511,29 +921,58 @@ pub fn launch_moonlight() -> bool {
 
         // Snap
         let snap_path = std::path::Path::new("/snap/bin/moonlight");
-        if snap_path.exists() && Command::new(snap_path).spawn().is_ok() {
+        if snap_path.exists() && hidden_command(snap_path).spawn().is_ok() {
             return true;
         }
     }
 
-    if cfg!(windows) {
-        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
-        let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    #[cfg(windows)]
+    {
+        // 1. Check known executable directories (Program Files, LocalAppData, WinGet links, Scoop shims, Chocolatey)
+        for exe_path in get_windows_moonlight_exe_paths() {
+            if exe_path.is_file() && hidden_command(&exe_path).spawn().is_ok() {
+                return true;
+            }
+        }
 
-        let win_candidates = [
-            format!("{}\\Moonlight Game Streaming\\Moonlight.exe", program_files),
-            format!("{}\\Moonlight Game Streaming\\Moonlight.exe", program_files_x86),
-            format!("{}\\Programs\\Moonlight Game Streaming\\Moonlight.exe", local_app_data),
-        ];
-
-        for p in win_candidates {
-            let path = std::path::Path::new(&p);
-            if path.exists() && Command::new(path).spawn().is_ok() {
+        // 2. Check Desktop and Start Menu shortcuts (.lnk files), falling back to ShellExecuteW / explorer / cmd start
+        for lnk_path in get_windows_moonlight_lnk_paths() {
+            if lnk_path.is_file() && launch_lnk_file(&lnk_path) {
                 return true;
             }
         }
     }
 
     false
+}
+
+/// Query the OS ARP cache to discover or verify the MAC address for a given LAN IP.
+#[allow(dead_code)]
+pub fn lookup_arp_mac(ip: &str) -> Option<String> {
+    let ip = ip.trim();
+    if ip.is_empty() || validate_host_token(ip, "ARP IP").is_err() {
+        return None;
+    }
+
+    let output = if cfg!(windows) {
+        hidden_command("arp").args(["-a", ip]).output().ok()?
+    } else {
+        hidden_command("arp").args(["-n", ip]).output().ok()?
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        if line.contains(ip) {
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            for token in tokens {
+                if let Ok(bytes) = parse_mac_bytes(token) {
+                    return Some(format!(
+                        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
+                    ));
+                }
+            }
+        }
+    }
+    None
 }

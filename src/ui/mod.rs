@@ -16,7 +16,26 @@ use crate::ui::theme::{apply_custom_theme, colors, flow_button, metrics};
 use crate::ui::toast::{render_toasts, Toast};
 use eframe::egui::{self, Align, Layout, Vec2};
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub enum ReachabilityState {
+    Idle,
+    Testing {
+        host: String,
+        started_at: std::time::Instant,
+    },
+    Result {
+        host: String,
+        ping_ok: bool,
+        latency_ms: Option<f32>,
+        ssh_port: u16,
+        ssh_ok: bool,
+        checked_at: std::time::Instant,
+    },
+}
 
 pub struct WakeApp {
     pub app_config: AppConfig,
@@ -34,6 +53,10 @@ pub struct WakeApp {
     pub settings_profile_name: String,
     pub settings_error: Option<String>,
     pub power_status: Option<String>,
+
+    // Reachability test state
+    pub reachability_state: ReachabilityState,
+    pub reachability_rx: Option<Receiver<(String, bool, Option<f32>, u16, bool)>>,
 
     // Toast notifications
     pub toasts: Vec<Toast>,
@@ -84,6 +107,8 @@ impl WakeApp {
             settings_profile_name,
             settings_error: None,
             power_status: None,
+            reachability_state: ReachabilityState::Idle,
+            reachability_rx: None,
             toasts: Vec::new(),
             show_new_profile_dialog: false,
             new_profile_name_input: String::new(),
@@ -109,6 +134,8 @@ impl WakeApp {
         let mut toggle_console = false;
         let mut save_modal = false;
         let mut close_escape = false;
+        let mut confirm_power_action = false;
+        let mut power_number_select: Option<usize> = None;
 
         // While any modal is open, shortcuts that fire real side effects on the
         // underlying pipeline (resending WOL, clearing logs) must not fire in
@@ -118,6 +145,14 @@ impl WakeApp {
             || self.show_power_modal
             || self.show_new_profile_dialog
             || self.show_json_config_dialog;
+
+        // Must be read before entering `ctx.input()` below -- egui's Context
+        // locks its input state for the duration of that closure, and
+        // `wants_keyboard_input()` needs that same lock internally, so calling
+        // it from inside the closure self-deadlocks the whole UI thread on
+        // the very first frame (observed as the window getting created but
+        // never showing/resizing -- "app won't open").
+        let wants_keyboard_input = ctx.wants_keyboard_input();
 
         ctx.input(|i| {
             if i.key_pressed(egui::Key::Escape) {
@@ -135,7 +170,23 @@ impl WakeApp {
                 toggle_console = true;
             }
 
-            if !ctx.wants_keyboard_input() && !any_modal_open {
+            if self.show_power_modal {
+                if self.pending_power_action.is_some() {
+                    if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space) {
+                        confirm_power_action = true;
+                    }
+                } else if !wants_keyboard_input {
+                    if i.key_pressed(egui::Key::Num1) {
+                        power_number_select = Some(1);
+                    } else if i.key_pressed(egui::Key::Num2) {
+                        power_number_select = Some(2);
+                    } else if i.key_pressed(egui::Key::Num3) {
+                        power_number_select = Some(3);
+                    }
+                }
+            }
+
+            if !wants_keyboard_input && !any_modal_open {
                 if i.key_pressed(egui::Key::F5)
                     || ((i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::R))
                 {
@@ -178,6 +229,36 @@ impl WakeApp {
                 } else {
                     self.show_power_modal = false;
                 }
+            }
+        }
+
+        if confirm_power_action {
+            if let Some((action_code, _action_title)) = self.pending_power_action {
+                match self.pipeline.trigger_power_action(&self.current_profile, action_code) {
+                    Ok(m) => {
+                        self.power_status = Some(m.clone());
+                        self.pending_power_action = None;
+                        self.show_power_modal = false;
+                        self.add_toast(Toast::info(format!(
+                            "Remote power command '{}' executed",
+                            action_code
+                        )));
+                    }
+                    Err(e) => {
+                        self.power_status = Some(format!("Error: {}", e));
+                        self.add_toast(Toast::error(format!("Power action failed: {}", e)));
+                        self.pending_power_action = None;
+                    }
+                }
+            }
+        }
+
+        if let Some(num) = power_number_select {
+            match num {
+                1 => self.pending_power_action = Some(("suspend", "Suspend / Sleep")),
+                2 => self.pending_power_action = Some(("reboot", "Reboot Target")),
+                3 => self.pending_power_action = Some(("shutdown", "Power Off / Shutdown")),
+                _ => {}
             }
         }
 
@@ -228,89 +309,140 @@ impl WakeApp {
     }
 
     fn render_action_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.horizontal(|ui| {
-            let is_standby = self.pipeline.stage == Stage::Standby;
-            let is_ready = self.pipeline.stage == Stage::Ready;
-            let is_timeout = self.pipeline.stage == Stage::Timeout;
+        let is_standby = self.pipeline.stage == Stage::Standby;
+        let is_ready = self.pipeline.stage == Stage::Ready;
+        let is_timeout = self.pipeline.stage == Stage::Timeout;
 
-            let (btn_text, btn_color, btn_label_color, hover_text) = if is_standby {
-                (
-                    "Wake Workstation  [Space]",
-                    colors::OK,
-                    colors::BTN_LABEL_ON_LIGHT,
-                    "Broadcast Wake-on-LAN and start the connection sequence (Shortcut: Space or Enter)",
-                )
-            } else if is_ready {
-                (
-                    "Launch Moonlight  [Space]",
-                    colors::OK,
-                    colors::BTN_LABEL_ON_LIGHT,
-                    "Open the Moonlight streaming client (Shortcut: Space or Enter)",
-                )
-            } else if is_timeout {
-                (
-                    "Retry Wake Sequence  [Space]",
-                    colors::ERR,
-                    colors::BTN_LABEL_ON_LIGHT,
-                    "Restart the wake sequence from scratch after the previous attempt timed out (Shortcut: Space or Enter)",
-                )
-            } else {
-                (
-                    "Restart Sequence  [Space]",
-                    colors::ACCENT,
-                    colors::BTN_LABEL_ON_ACCENT,
-                    "Abandon the current attempt and restart the wake sequence from scratch (Shortcut: Space or Enter)",
-                )
-            };
+        let (btn_text, btn_color, btn_label_color, hover_text) = if is_standby {
+            (
+                "Wake Workstation  [Space]",
+                colors::OK,
+                colors::BTN_LABEL_ON_LIGHT,
+                "Broadcast Wake-on-LAN and start the connection sequence (Shortcut: Space or Enter)",
+            )
+        } else if is_ready {
+            (
+                "Launch Moonlight  [Space]",
+                colors::OK,
+                colors::BTN_LABEL_ON_LIGHT,
+                "Open the Moonlight streaming client (Shortcut: Space or Enter)",
+            )
+        } else if is_timeout {
+            (
+                "Retry Wake Sequence  [Space]",
+                colors::ERR,
+                colors::BTN_LABEL_ON_LIGHT,
+                "Restart the wake sequence from scratch after the previous attempt timed out (Shortcut: Space or Enter)",
+            )
+        } else {
+            (
+                "Restart Sequence  [Space]",
+                colors::ACCENT,
+                colors::BTN_LABEL_ON_ACCENT,
+                "Abandon the current attempt and restart the wake sequence from scratch (Shortcut: Space or Enter)",
+            )
+        };
 
-            let wake_btn = flow_button(ui, btn_text, btn_color, btn_label_color);
-            if wake_btn.clicked() {
-                if is_ready {
-                    self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
-                    if launch_moonlight() {
-                        self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
-                        self.add_toast(Toast::success("Moonlight streaming client opened"));
+        let avail_width = ui.available_width();
+        const ACTION_BAR_WRAP_WIDTH: f32 = 560.0;
+
+        if avail_width >= ACTION_BAR_WRAP_WIDTH {
+            ui.horizontal(|ui| {
+                let wake_btn = flow_button(ui, btn_text, btn_color, btn_label_color);
+                if wake_btn.clicked() {
+                    if is_ready {
+                        self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
+                        if launch_moonlight() {
+                            self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
+                            self.add_toast(Toast::success("Moonlight streaming client opened"));
+                        } else {
+                            self.pipeline.log(
+                                LogLevel::Warn,
+                                "Could not find Moonlight executable in standard paths/Flatpak/Snap",
+                            );
+                            self.add_toast(Toast::warning("Moonlight executable not found"));
+                        }
                     } else {
-                        self.pipeline.log(
-                            LogLevel::Warn,
-                            "Could not find Moonlight executable in standard paths/Flatpak/Snap",
-                        );
-                        self.add_toast(Toast::warning("Moonlight executable not found"));
+                        self.pipeline.reset(&self.current_profile);
+                        self.add_toast(Toast::info("WOL sequence initiated"));
                     }
-                } else {
-                    self.pipeline.reset(&self.current_profile);
-                    self.add_toast(Toast::info("WOL sequence initiated"));
                 }
-            }
-            wake_btn.on_hover_text(hover_text);
+                wake_btn.on_hover_text(hover_text);
 
-            ui.add_space(metrics::SPACE_SM);
+                ui.add_space(metrics::SPACE_SM);
 
-            let wol_btn = flow_button(ui, "Re-send WOL  [F5]", colors::BTN_BG, colors::TEXT);
-            if wol_btn.clicked() {
-                self.pipeline.send_wol(&self.current_profile);
-                self.add_toast(Toast::info("WOL magic packet broadcasted"));
-            }
-            wol_btn.on_hover_text("Broadcast magic packet immediately to MAC address (Shortcut: F5)");
+                let wol_btn = flow_button(ui, "Re-send WOL  [F5]", colors::BTN_BG, colors::TEXT);
+                if wol_btn.clicked() {
+                    self.pipeline.send_wol(&self.current_profile);
+                    self.add_toast(Toast::info("WOL magic packet broadcasted"));
+                }
+                wol_btn.on_hover_text("Broadcast magic packet immediately to MAC address (Shortcut: F5)");
 
-            ui.add_space(metrics::SPACE_SM);
+                ui.add_space(metrics::SPACE_SM);
 
-            let pwr_btn = flow_button(ui, "Power", colors::BTN_BG, colors::TEXT);
-            if pwr_btn.clicked() {
-                self.power_status = None;
-                self.pending_power_action = None;
-                self.show_power_modal = true;
-            }
-            pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown)");
+                let pwr_btn = flow_button(ui, "Power", colors::BTN_BG, colors::TEXT);
+                if pwr_btn.clicked() {
+                    self.power_status = None;
+                    self.pending_power_action = None;
+                    self.show_power_modal = true;
+                }
+                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown)");
 
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let close_btn = flow_button(ui, "Close", colors::BTN_BG, colors::TEXT_MUTED);
+                    if close_btn.clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    close_btn.on_hover_text("Close application window");
+                });
+            });
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
+
+                let wake_btn = flow_button(ui, btn_text, btn_color, btn_label_color);
+                if wake_btn.clicked() {
+                    if is_ready {
+                        self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
+                        if launch_moonlight() {
+                            self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
+                            self.add_toast(Toast::success("Moonlight streaming client opened"));
+                        } else {
+                            self.pipeline.log(
+                                LogLevel::Warn,
+                                "Could not find Moonlight executable in standard paths/Flatpak/Snap",
+                            );
+                            self.add_toast(Toast::warning("Moonlight executable not found"));
+                        }
+                    } else {
+                        self.pipeline.reset(&self.current_profile);
+                        self.add_toast(Toast::info("WOL sequence initiated"));
+                    }
+                }
+                wake_btn.on_hover_text(hover_text);
+
+                let wol_btn = flow_button(ui, "Re-send WOL  [F5]", colors::BTN_BG, colors::TEXT);
+                if wol_btn.clicked() {
+                    self.pipeline.send_wol(&self.current_profile);
+                    self.add_toast(Toast::info("WOL magic packet broadcasted"));
+                }
+                wol_btn.on_hover_text("Broadcast magic packet immediately to MAC address (Shortcut: F5)");
+
+                let pwr_btn = flow_button(ui, "Power", colors::BTN_BG, colors::TEXT);
+                if pwr_btn.clicked() {
+                    self.power_status = None;
+                    self.pending_power_action = None;
+                    self.show_power_modal = true;
+                }
+                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown)");
+
                 let close_btn = flow_button(ui, "Close", colors::BTN_BG, colors::TEXT_MUTED);
                 if close_btn.clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 close_btn.on_hover_text("Close application window");
             });
-        });
+        }
     }
 }
 
@@ -318,19 +450,114 @@ impl eframe::App for WakeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_keyboard_shortcuts(ctx);
 
-        if self.pipeline.stage != Stage::Standby && !self.pipeline.is_finished {
-            self.pipeline.tick(&self.current_profile, self.auto_launch_moonlight);
-            ctx.request_repaint_after(Duration::from_millis(400));
-        } else {
-            ctx.request_repaint_after(Duration::from_millis(1500));
+        // Drain asynchronous reachability test response if available
+        if let Some(rx) = &self.reachability_rx {
+            if let Ok((host, ping_ok, latency_ms, ssh_port, ssh_ok)) = rx.try_recv() {
+                self.reachability_state = ReachabilityState::Result {
+                    host: host.clone(),
+                    ping_ok,
+                    latency_ms,
+                    ssh_port,
+                    ssh_ok,
+                    checked_at: std::time::Instant::now(),
+                };
+                self.reachability_rx = None;
+
+                if ping_ok {
+                    if let Some(lat) = latency_ms {
+                        self.pipeline.update_latency(Some(lat));
+                    }
+                    let lat_str = crate::net::format_latency(latency_ms);
+                    let ssh_str = if ssh_ok {
+                        format!(" | SSH port {} open", ssh_port)
+                    } else {
+                        String::new()
+                    };
+                    self.add_toast(Toast::success(format!(
+                        "Host '{}' reachable ({}{})",
+                        host, lat_str, ssh_str
+                    )));
+                    self.pipeline.log(
+                        LogLevel::Ok,
+                        format!(
+                            "Reachability check: '{}' responded ({} latency{})",
+                            host, lat_str, ssh_str
+                        ),
+                    );
+                } else {
+                    self.add_toast(Toast::error(format!(
+                        "Host '{}' is unreachable (ICMP ping timed out)",
+                        host
+                    )));
+                    self.pipeline.log(
+                        LogLevel::Warn,
+                        format!("Reachability check: '{}' is unreachable", host),
+                    );
+                }
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(80));
+            }
+        }
+
+        // Stage-aware polling and repaint intervals:
+        // 1. Standby & Timeout: True idle states, throttled to 1500ms to conserve CPU/GPU.
+        // 2. Ready: Host is online; continuously tick live telemetry every 1000ms so the
+        //    latency sparkline graph dynamically populates with continuous real-time samples.
+        // 3. Active wake stages (Wol, Ping, Ssh, Sunshine): Tick fast (200ms) for responsive progression.
+        match self.pipeline.stage {
+            Stage::Standby | Stage::Timeout => {
+                ctx.request_repaint_after(Duration::from_millis(1500));
+            }
+            Stage::Ready => {
+                self.pipeline.tick(&self.current_profile, self.auto_launch_moonlight);
+                ctx.request_repaint_after(Duration::from_millis(600));
+            }
+            _ => {
+                self.pipeline.tick(&self.current_profile, self.auto_launch_moonlight);
+                ctx.request_repaint_after(Duration::from_millis(200));
+            }
         }
 
         if self.pipeline.stage == Stage::Ready && self.current_profile.auto_close {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
+        // TopBottomPanel::bottom guarantees the bottom Action Bar is NEVER clipped or squeezed
+        // off-screen even if the user resizes the window vertically down to minimum height.
+        egui::TopBottomPanel::bottom("action_bar_panel")
+            .frame(egui::Frame::none().fill(colors::BG).inner_margin(egui::Margin {
+                left: metrics::OUTER_MARGIN,
+                right: metrics::OUTER_MARGIN,
+                top: metrics::SPACE_SM,
+                bottom: metrics::OUTER_MARGIN,
+            }))
+            .show(ctx, |ui| {
+                let avail_width = ui.available_width();
+                let content_width = avail_width.min(metrics::MAX_CONTENT_WIDTH);
+                let side_pad = ((avail_width - content_width) / 2.0).max(0.0);
+
+                ui.horizontal(|ui| {
+                    if side_pad > 0.5 {
+                        ui.add_space(side_pad);
+                    }
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(content_width, ui.available_height()),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            self.render_action_bar(ui, ctx);
+                        },
+                    );
+                });
+            });
+
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(colors::BG).inner_margin(metrics::OUTER_MARGIN))
+            .frame(egui::Frame::none().fill(colors::BG).inner_margin(egui::Margin {
+                left: metrics::OUTER_MARGIN,
+                right: metrics::OUTER_MARGIN,
+                top: metrics::OUTER_MARGIN,
+                bottom: metrics::SPACE_XS,
+            }))
             .show(ctx, |ui| {
                 let avail_width = ui.available_width();
                 let content_width = avail_width.min(metrics::MAX_CONTENT_WIDTH);
@@ -345,25 +572,25 @@ impl eframe::App for WakeApp {
                         Vec2::new(content_width, avail_height),
                         Layout::top_down(Align::Min),
                         |ui| {
-                            self.render_header(ui);
-                            ui.add_space(metrics::SPACE_MD);
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    self.render_header(ui);
+                                    ui.add_space(metrics::SPACE_MD);
 
-                            self.render_stepper(ui);
-                            ui.add_space(metrics::SPACE_MD);
+                                    self.render_stepper(ui);
+                                    ui.add_space(metrics::SPACE_MD);
 
-                            self.render_hero_status(ui);
-                            ui.add_space(metrics::SPACE_MD);
+                                    self.render_hero_status(ui);
+                                    ui.add_space(metrics::SPACE_MD);
 
-                            let reserved_below = metrics::ACTION_BAR_HEIGHT + metrics::SPACE_MD;
-                            let console_height = if self.console_collapsed {
-                                36.0
-                            } else {
-                                (ui.available_height() - reserved_below).max(metrics::MIN_CONSOLE_HEIGHT)
-                            };
-                            self.render_console(ui, ctx, console_height);
-                            ui.add_space(metrics::SPACE_MD);
-
-                            self.render_action_bar(ui, ctx);
+                                    let console_height = if self.console_collapsed {
+                                        36.0
+                                    } else {
+                                        ui.available_height().max(metrics::MIN_CONSOLE_HEIGHT)
+                                    };
+                                    self.render_console(ui, ctx, console_height);
+                                });
                         },
                     );
                 });

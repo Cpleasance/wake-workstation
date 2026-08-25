@@ -56,10 +56,10 @@ pub mod metrics {
     pub const FS_LABEL: f32 = 11.0;
     pub const FS_SMALL: f32 = 10.0;
 
-    pub const MAX_CONTENT_WIDTH: f32 = 920.0;
-    pub const ACTION_BAR_HEIGHT: f32 = 38.0;
-    pub const MIN_CONSOLE_HEIGHT: f32 = 130.0;
-    pub const OUTER_MARGIN: f32 = 18.0;
+    pub const MAX_CONTENT_WIDTH: f32 = 1280.0;
+    pub const ACTION_BAR_HEIGHT: f32 = 40.0;
+    pub const MIN_CONSOLE_HEIGHT: f32 = 110.0;
+    pub const OUTER_MARGIN: f32 = 16.0;
 }
 
 pub fn panel_frame() -> Frame {

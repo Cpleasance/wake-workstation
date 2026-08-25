@@ -51,10 +51,13 @@ impl WakeApp {
 
         match import_config_json(raw) {
             Ok(app_cfg) => {
-                if let Err(e) = validate_settings(&app_cfg.get_active_profile()) {
-                    self.settings_error = Some(format!("Import validation error: {}", e));
-                    self.add_toast(Toast::error(format!("Import validation failed: {}", e)));
-                    return false;
+                for (name, profile) in &app_cfg.profiles {
+                    if let Err(e) = validate_settings(profile) {
+                        let err_msg = format!("Import validation error in profile '{}': {}", name, e);
+                        self.settings_error = Some(err_msg.clone());
+                        self.add_toast(Toast::error(err_msg));
+                        return false;
+                    }
                 }
                 self.app_config = app_cfg;
                 self.settings_profile_name = self.app_config.active_profile.clone();
@@ -92,11 +95,16 @@ impl WakeApp {
             "Import Configuration (JSON)"
         };
 
+        let screen = ctx.screen_rect();
+        let modal_w = (screen.width() - 40.0).clamp(420.0, 780.0);
+        let modal_h = (screen.height() - 40.0).clamp(300.0, 580.0);
+
         egui::Window::new(title)
             .collapsible(false)
             .resizable(true)
-            .default_size(Vec2::new(520.0, 380.0))
-            .min_size(Vec2::new(400.0, 260.0))
+            .default_size(Vec2::new(modal_w, modal_h))
+            .min_size(Vec2::new(360.0, 240.0))
+            .max_size(Vec2::new(screen.width() - 16.0, screen.height() - 16.0))
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.add_space(4.0);
@@ -112,9 +120,13 @@ impl WakeApp {
                 );
                 ui.add_space(metrics::SPACE_SM);
 
+                let footer_reserved = 54.0;
+                let avail_editor_h = (ui.available_height() - footer_reserved).max(120.0);
+
                 inset_frame().show(ui, |ui| {
                     egui::ScrollArea::vertical()
-                        .max_height(220.0)
+                        .max_height(avail_editor_h)
+                        .auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.add(
                                 egui::TextEdit::multiline(&mut self.json_config_input)
@@ -126,28 +138,92 @@ impl WakeApp {
                 });
 
                 ui.add_space(metrics::SPACE_MD);
-                ui.horizontal(|ui| {
-                    if flow_button(ui, "Copy JSON", colors::BTN_BG, colors::TEXT).clicked() {
-                        ctx.output_mut(|o| o.copied_text = self.json_config_input.clone());
-                        self.add_toast(Toast::info("Copied JSON to clipboard"));
-                    }
 
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let avail_w = ui.available_width();
+                if avail_w >= 440.0 {
+                    ui.horizontal(|ui| {
+                        let copy_btn = flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
+                        if copy_btn.clicked() {
+                            ctx.output_mut(|o| o.copied_text = self.json_config_input.clone());
+                            self.add_toast(Toast::info("Copied JSON to clipboard"));
+                        }
+                        copy_btn.on_hover_text("Copy configuration JSON string to clipboard");
+
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if self.json_config_is_export {
+                                let done_btn = flow_button(ui, "Done  [Esc]", colors::OK, colors::BTN_LABEL_ON_LIGHT);
+                                if done_btn.clicked() {
+                                    self.show_json_config_dialog = false;
+                                }
+                                done_btn.on_hover_text("Close export dialog (Shortcut: Esc)");
+                            } else {
+                                let mut trigger_import = false;
+                                if ui.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Enter)) {
+                                    trigger_import = true;
+                                }
+
+                                let apply_btn = flow_button(
+                                    ui,
+                                    "Apply Import  [Ctrl+Enter]",
+                                    colors::OK,
+                                    colors::BTN_LABEL_ON_LIGHT,
+                                );
+                                if apply_btn.clicked() || trigger_import {
+                                    self.apply_imported_json();
+                                }
+                                apply_btn.on_hover_text("Validate and import JSON configuration (Shortcut: Ctrl+Enter)");
+
+                                ui.add_space(metrics::SPACE_SM);
+
+                                let cancel_btn = flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
+                                if cancel_btn.clicked() {
+                                    self.show_json_config_dialog = false;
+                                }
+                                cancel_btn.on_hover_text("Discard and close import dialog (Shortcut: Esc)");
+                            }
+                        });
+                    });
+                } else {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
                         if self.json_config_is_export {
-                            if flow_button(ui, "Done", colors::OK, colors::BTN_LABEL_ON_LIGHT).clicked() {
+                            let done_btn = flow_button(ui, "Done  [Esc]", colors::OK, colors::BTN_LABEL_ON_LIGHT);
+                            if done_btn.clicked() {
                                 self.show_json_config_dialog = false;
                             }
+                            done_btn.on_hover_text("Close export dialog (Shortcut: Esc)");
                         } else {
-                            if flow_button(ui, "Apply Import", colors::OK, colors::BTN_LABEL_ON_LIGHT).clicked() {
+                            let mut trigger_import = false;
+                            if ui.input(|i| (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Enter)) {
+                                trigger_import = true;
+                            }
+
+                            let apply_btn = flow_button(
+                                ui,
+                                "Apply Import  [Ctrl+Enter]",
+                                colors::OK,
+                                colors::BTN_LABEL_ON_LIGHT,
+                            );
+                            if apply_btn.clicked() || trigger_import {
                                 self.apply_imported_json();
                             }
-                            ui.add_space(metrics::SPACE_SM);
-                            if flow_button(ui, "Cancel", colors::BTN_BG, colors::TEXT_MUTED).clicked() {
+                            apply_btn.on_hover_text("Validate and import JSON configuration (Shortcut: Ctrl+Enter)");
+
+                            let cancel_btn = flow_button(ui, "Cancel  [Esc]", colors::BTN_BG, colors::TEXT_MUTED);
+                            if cancel_btn.clicked() {
                                 self.show_json_config_dialog = false;
                             }
+                            cancel_btn.on_hover_text("Discard and close import dialog (Shortcut: Esc)");
                         }
+
+                        let copy_btn = flow_button(ui, "📋 Copy JSON", colors::BTN_BG, colors::TEXT);
+                        if copy_btn.clicked() {
+                            ctx.output_mut(|o| o.copied_text = self.json_config_input.clone());
+                            self.add_toast(Toast::info("Copied JSON to clipboard"));
+                        }
+                        copy_btn.on_hover_text("Copy configuration JSON string to clipboard");
                     });
-                });
+                }
             });
     }
 }

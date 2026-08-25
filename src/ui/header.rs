@@ -3,28 +3,36 @@ use crate::net::format_latency;
 use crate::ui::theme::{chip_frame, colors, flow_button, metrics, panel_frame};
 use crate::ui::toast::Toast;
 use crate::ui::WakeApp;
-use eframe::egui::{self, Align, Layout, RichText};
+use eframe::egui::{self, Align, Layout, RichText, Vec2};
 
 impl WakeApp {
     pub fn render_header(&mut self, ui: &mut egui::Ui) {
         panel_frame().show(ui, |ui| {
-            const STACK_BELOW_WIDTH: f32 = 620.0;
+            const STACK_BELOW_WIDTH: f32 = 680.0;
             let avail_width = ui.available_width();
 
             if avail_width < STACK_BELOW_WIDTH {
                 self.render_header_identity(ui);
                 ui.add_space(metrics::SPACE_SM);
-                ui.horizontal(|ui| {
-                    self.render_header_status_cluster(ui);
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
+                    self.render_header_status_cluster(ui, false);
                 });
             } else {
                 ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        self.render_header_identity(ui);
-                    });
+                    let right_width = 280.0;
+                    let left_width = (avail_width - right_width - metrics::SPACE_SM).max(250.0);
+
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(left_width, ui.available_height()),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            self.render_header_identity(ui);
+                        },
+                    );
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        self.render_header_status_cluster(ui);
+                        self.render_header_status_cluster(ui, true);
                     });
                 });
             }
@@ -32,9 +40,10 @@ impl WakeApp {
     }
 
     fn render_header_identity(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
             ui.label(
-                RichText::new("WAKE THINKSTATION")
+                RichText::new("WAKE WORKSTATION")
                     .size(metrics::FS_HEADER)
                     .strong()
                     .color(colors::TEXT),
@@ -111,7 +120,7 @@ impl WakeApp {
 
         ui.add_space(metrics::SPACE_XS);
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = metrics::SPACE_SM;
+            ui.spacing_mut().item_spacing = Vec2::new(metrics::SPACE_SM, metrics::SPACE_XS);
             ui.label(
                 RichText::new(format!(
                     "{}@{}",
@@ -121,13 +130,16 @@ impl WakeApp {
                 .size(metrics::FS_LABEL)
                 .monospace()
                 .color(colors::TEXT_MUTED),
-            );
+            )
+            .on_hover_text("Target machine SSH user and LAN IP");
+
             ui.label(
                 RichText::new(&self.current_profile.mac_address)
                     .size(metrics::FS_LABEL)
                     .monospace()
                     .color(colors::TEXT_MUTED),
-            );
+            )
+            .on_hover_text("Target network card MAC address for Wake-on-LAN");
 
             let mode_desc = if self.current_profile.direct_wol || self.current_profile.pi_host.trim().is_empty() {
                 "Direct local WOL".to_string()
@@ -139,22 +151,12 @@ impl WakeApp {
                     .size(metrics::FS_SMALL)
                     .monospace()
                     .color(colors::TEXT_DIM),
-            );
+            )
+            .on_hover_text("Wake-on-LAN dispatch routing method");
         });
     }
 
-    fn render_header_status_cluster(&mut self, ui: &mut egui::Ui) {
-        let settings_btn = flow_button(ui, "Settings", colors::BTN_BG, colors::TEXT);
-        if settings_btn.clicked() {
-            self.settings_edit_profile = self.current_profile.clone();
-            self.settings_profile_name = self.app_config.active_profile.clone();
-            self.settings_error = None;
-            self.show_settings = true;
-        }
-        settings_btn.on_hover_text("Open settings & profile manager (Shortcut: Ctrl+S to save in settings)");
-
-        ui.add_space(metrics::SPACE_SM);
-
+    fn render_header_status_cluster(&mut self, ui: &mut egui::Ui, is_right_aligned: bool) {
         let max_w = self.current_profile.max_wait_seconds;
         let elapsed = self.pipeline.elapsed_secs;
         let timer_text =
@@ -167,28 +169,56 @@ impl WakeApp {
             None => (colors::TEXT_DIM, "\u{25cb}", "Host reachability offline or unverified"),
         };
 
-        chip_frame().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(timer_text)
-                        .size(metrics::FS_LABEL)
-                        .monospace()
-                        .strong()
-                        .color(colors::TEXT_MUTED),
-                )
-                .on_hover_text("Elapsed execution time / Maximum wait timeout");
+        let render_chip = |ui: &mut egui::Ui| {
+            chip_frame().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(&timer_text)
+                            .size(metrics::FS_LABEL)
+                            .monospace()
+                            .strong()
+                            .color(colors::TEXT_MUTED),
+                    )
+                    .on_hover_text("Elapsed execution time / Maximum wait timeout");
 
-                ui.add_space(metrics::SPACE_SM);
-                ui.label(RichText::new(lat_dot).size(metrics::FS_SMALL).color(lat_color));
-                ui.label(
-                    RichText::new(format!("{} RTT", format_latency(self.pipeline.last_latency)))
-                        .size(metrics::FS_LABEL)
-                        .monospace()
-                        .strong()
-                        .color(if self.pipeline.last_latency.is_some() { colors::OK } else { colors::TEXT_DIM }),
-                )
-                .on_hover_text(lat_desc);
+                    ui.add_space(metrics::SPACE_SM);
+                    ui.label(RichText::new(lat_dot).size(metrics::FS_SMALL).color(lat_color));
+                    ui.label(
+                        RichText::new(format!("{} RTT", format_latency(self.pipeline.last_latency)))
+                            .size(metrics::FS_LABEL)
+                            .monospace()
+                            .strong()
+                            .color(if self.pipeline.last_latency.is_some() { colors::OK } else { colors::TEXT_DIM }),
+                    )
+                    .on_hover_text(lat_desc);
+                });
             });
-        });
+        };
+
+        let mut open_settings = false;
+        let render_settings_btn = |ui: &mut egui::Ui, open: &mut bool| {
+            let settings_btn = flow_button(ui, "Settings", colors::BTN_BG, colors::TEXT);
+            if settings_btn.clicked() {
+                *open = true;
+            }
+            settings_btn.on_hover_text("Open settings & profile manager (Shortcut: Ctrl+S to save in settings)");
+        };
+
+        if is_right_aligned {
+            render_settings_btn(ui, &mut open_settings);
+            ui.add_space(metrics::SPACE_SM);
+            render_chip(ui);
+        } else {
+            render_chip(ui);
+            ui.add_space(metrics::SPACE_SM);
+            render_settings_btn(ui, &mut open_settings);
+        }
+
+        if open_settings {
+            self.settings_edit_profile = self.current_profile.clone();
+            self.settings_profile_name = self.app_config.active_profile.clone();
+            self.settings_error = None;
+            self.show_settings = true;
+        }
     }
 }

@@ -64,26 +64,34 @@ impl WakeApp {
                            tt: &str,
                            stage: Stage| {
             let (bg, border, fg, badge) = style_for(stage);
+            let margin = Vec2::new(8.0, 6.0);
+            let inner_w = (card_width - 2.0 * margin.x).max(10.0);
             Frame::none()
                 .fill(bg)
                 .stroke(Stroke::new(1.0_f32, border))
                 .rounding(Rounding::same(metrics::ROUNDING_MD))
-                .inner_margin(Vec2::new(10.0, 8.0))
+                .inner_margin(margin)
                 .show(ui, |ui| {
-                    ui.set_min_width(card_width);
-                    ui.set_max_width(card_width);
+                    ui.set_min_width(inner_w);
+                    ui.set_max_width(inner_w);
                     ui.vertical_centered(|ui| {
-                        ui.label(
-                            RichText::new(format!("{} {}", badge, label))
-                                .size(metrics::FS_LABEL)
-                                .strong()
-                                .color(fg),
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!("{} {}", badge, label))
+                                    .size(metrics::FS_LABEL)
+                                    .strong()
+                                    .color(fg),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Wrap),
                         );
                         ui.add_space(2.0);
-                        ui.label(
-                            RichText::new(sub)
-                                .size(metrics::FS_SMALL)
-                                .color(colors::TEXT_MUTED),
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(sub)
+                                    .size(metrics::FS_SMALL)
+                                    .color(colors::TEXT_MUTED),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Wrap),
                         );
                     });
                 })
@@ -109,7 +117,7 @@ impl WakeApp {
             } else {
                 let two_col_card_width = ((avail_width - gap) / 2.0).max(90.0);
                 ui.vertical(|ui| {
-                    for row in stages.chunks(2) {
+                    for (row_idx, row) in stages.chunks(2).enumerate() {
                         ui.horizontal(|ui| {
                             for (i, (stage, label, sub, tt)) in row.iter().enumerate() {
                                 render_card(ui, two_col_card_width, label, sub, tt, *stage);
@@ -118,7 +126,9 @@ impl WakeApp {
                                 }
                             }
                         });
-                        ui.add_space(gap);
+                        if row_idx == 0 {
+                            ui.add_space(gap);
+                        }
                     }
                 });
             }
