@@ -11,7 +11,7 @@ pub mod theme;
 pub mod toast;
 
 use crate::config::{AppConfig, HostProfile};
-use crate::net::launch_moonlight_stream;
+use crate::net::launch_moonlight;
 use crate::pipeline::{LogLevel, PipelineState, Stage};
 use crate::ui::theme::{apply_custom_theme, colors, flow_button, metrics};
 use crate::ui::toast::{render_toasts, Toast};
@@ -360,7 +360,7 @@ impl WakeApp {
                 LogLevel::Action,
                 "Manual Moonlight launch requested (Space/Enter)",
             );
-            if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
+            if launch_moonlight() {
                 self.pipeline
                     .log(LogLevel::Ok, "Moonlight streaming client opened");
                 self.add_toast(Toast::success("Moonlight streaming client opened"));
@@ -450,7 +450,7 @@ impl WakeApp {
                 if wake_btn.clicked() {
                     if is_ready {
                         self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
-                        if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
+                        if launch_moonlight() {
                             self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
                             self.add_toast(Toast::success("Moonlight streaming client opened"));
                         } else {
@@ -536,7 +536,7 @@ impl WakeApp {
                 if wake_btn.clicked() {
                     if is_ready {
                         self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
-                        if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
+                        if launch_moonlight() {
                             self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
                             self.add_toast(Toast::success("Moonlight streaming client opened"));
                         } else {

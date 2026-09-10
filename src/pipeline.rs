@@ -6,7 +6,7 @@
 use crate::config::HostProfile;
 use crate::net::{
     check_ping, check_tcp_port, execute_power_action_with_options, format_latency,
-    launch_moonlight_stream, play_system_sound, send_magic_packet,
+    launch_moonlight, play_system_sound, send_magic_packet,
     send_ssh_wol_with_options, SoundType,
 };
 use chrono::Local;
@@ -525,7 +525,7 @@ impl PipelineState {
                         if auto_launch_moonlight && !self.auto_launched_moonlight {
                             self.auto_launched_moonlight = true;
                             self.log(LogLevel::Action, "Launching Moonlight streaming client...");
-                            if launch_moonlight_stream(Some(&config.thinkstation_ip), None) {
+                            if launch_moonlight() {
                                 self.log(LogLevel::Ok, "Moonlight client spawned successfully");
                             } else {
                                 self.log(

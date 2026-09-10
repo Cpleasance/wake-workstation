@@ -941,20 +941,18 @@ pub fn launch_lnk_file_with_args(_path: &std::path::Path, _args: Option<&str>) -
 }
 
 /// Cross-platform Moonlight launcher with optional target host and application name.
-/// If `host` is specified, it passes `stream <host> [app]` to Moonlight CLI.
+/// Note: Moonlight CLI strictly requires an application name when `stream` is invoked
+/// (`moonlight stream <host> <app>`). If no app is provided, Moonlight is launched
+/// without arguments so it opens its GUI directly without a "No app provided" error.
 pub fn launch_moonlight_stream(host: Option<&str>, app: Option<&str>) -> bool {
     let mut args: Vec<String> = Vec::new();
-    if let Some(h) = host {
+    if let (Some(h), Some(a)) = (host, app) {
         let h = h.trim();
-        if !h.is_empty() {
+        let a = a.trim();
+        if !h.is_empty() && !a.is_empty() {
             args.push("stream".to_string());
             args.push(h.to_string());
-            if let Some(a) = app {
-                let a = a.trim();
-                if !a.is_empty() {
-                    args.push(a.to_string());
-                }
-            }
+            args.push(a.to_string());
         }
     }
 
