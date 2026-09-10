@@ -131,6 +131,8 @@ impl WakeApp {
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         let mut reset_pipeline = false;
         let mut launch_stream = false;
+        let mut sleep_host = false;
+        let mut shutdown_host = false;
         let mut send_wol = false;
         let mut clear_log = false;
         let mut toggle_console = false;
@@ -196,6 +198,17 @@ impl WakeApp {
                 }
 
                 if (i.modifiers.command || i.modifiers.ctrl)
+                    && i.key_pressed(egui::Key::P)
+                    && self.pipeline.stage == Stage::Ready
+                {
+                    if i.modifiers.shift {
+                        shutdown_host = true;
+                    } else {
+                        sleep_host = true;
+                    }
+                }
+
+                if (i.modifiers.command || i.modifiers.ctrl)
                     && (i.key_pressed(egui::Key::L) || i.key_pressed(egui::Key::K))
                 {
                     clear_log = true;
@@ -205,14 +218,25 @@ impl WakeApp {
                     && !self.show_power_modal
                     && !self.show_new_profile_dialog
                     && !self.show_json_config_dialog
-                    && (i.key_pressed(egui::Key::Space) || i.key_pressed(egui::Key::Enter))
                 {
-                    if self.pipeline.stage == Stage::Standby {
-                        reset_pipeline = true;
-                    } else if self.pipeline.stage == Stage::Ready {
-                        launch_stream = true;
-                    } else {
-                        reset_pipeline = true;
+                    let in_power_cooldown = self
+                        .pipeline
+                        .last_power_action_time
+                        .map(|t| t.elapsed() < std::time::Duration::from_millis(2000))
+                        .unwrap_or(false);
+
+                    if !in_power_cooldown {
+                        if self.pipeline.stage == Stage::Standby {
+                            if i.key_pressed(egui::Key::Space) {
+                                reset_pipeline = true;
+                            }
+                        } else if self.pipeline.stage == Stage::Ready {
+                            if i.key_pressed(egui::Key::Space) || i.key_pressed(egui::Key::Enter) {
+                                launch_stream = true;
+                            }
+                        } else if i.key_pressed(egui::Key::Space) {
+                            reset_pipeline = true;
+                        }
                     }
                 }
             }
@@ -313,6 +337,38 @@ impl WakeApp {
                 self.add_toast(Toast::warning("Moonlight executable not found"));
             }
         }
+
+        if sleep_host {
+            match self
+                .pipeline
+                .trigger_power_action(&self.current_profile, "suspend")
+            {
+                Ok(m) => {
+                    self.power_status = Some(m);
+                    self.add_toast(Toast::info("Workstation put to sleep"));
+                }
+                Err(e) => {
+                    self.power_status = Some(format!("Error: {}", e));
+                    self.add_toast(Toast::error(format!("Sleep failed: {}", e)));
+                }
+            }
+        }
+
+        if shutdown_host {
+            match self
+                .pipeline
+                .trigger_power_action(&self.current_profile, "shutdown")
+            {
+                Ok(m) => {
+                    self.power_status = Some(m);
+                    self.add_toast(Toast::info("Workstation powered off"));
+                }
+                Err(e) => {
+                    self.power_status = Some(format!("Error: {}", e));
+                    self.add_toast(Toast::error(format!("Shutdown failed: {}", e)));
+                }
+            }
+        }
     }
 
     fn render_action_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -325,7 +381,7 @@ impl WakeApp {
                 "Wake Workstation  [Space]",
                 colors::OK,
                 colors::BTN_LABEL_ON_LIGHT,
-                "Broadcast Wake-on-LAN and start the connection sequence (Shortcut: Space or Enter)",
+                "Broadcast Wake-on-LAN and start the connection sequence (Shortcut: Space)",
             )
         } else if is_ready {
             (
@@ -339,21 +395,21 @@ impl WakeApp {
                 "Retry Wake Sequence  [Space]",
                 colors::ERR,
                 colors::BTN_LABEL_ON_LIGHT,
-                "Restart the wake sequence from scratch after the previous attempt timed out (Shortcut: Space or Enter)",
+                "Restart the wake sequence from scratch after the previous attempt timed out (Shortcut: Space)",
             )
         } else {
             (
                 "Restart Sequence  [Space]",
                 colors::ACCENT,
                 colors::BTN_LABEL_ON_ACCENT,
-                "Abandon the current attempt and restart the wake sequence from scratch (Shortcut: Space or Enter)",
+                "Abandon the current attempt and restart the wake sequence from scratch (Shortcut: Space)",
             )
         };
 
         let avail_width = ui.available_width();
-        const ACTION_BAR_WRAP_WIDTH: f32 = 560.0;
+        let wrap_threshold = if is_ready { 760.0 } else { 560.0 };
 
-        if avail_width >= ACTION_BAR_WRAP_WIDTH {
+        if avail_width >= wrap_threshold {
             ui.horizontal(|ui| {
                 let wake_btn = flow_button(ui, btn_text, btn_color, btn_label_color);
                 if wake_btn.clicked() {
@@ -378,6 +434,40 @@ impl WakeApp {
 
                 ui.add_space(metrics::SPACE_SM);
 
+                if is_ready {
+                    let sleep_btn = flow_button(ui, "Sleep Host  [Ctrl+P]", colors::WARN, colors::BTN_LABEL_ON_LIGHT);
+                    if sleep_btn.clicked() {
+                        match self.pipeline.trigger_power_action(&self.current_profile, "suspend") {
+                            Ok(m) => {
+                                self.power_status = Some(m);
+                                self.add_toast(Toast::info("Workstation put to sleep"));
+                            }
+                            Err(e) => {
+                                self.power_status = Some(format!("Error: {}", e));
+                                self.add_toast(Toast::error(format!("Sleep failed: {}", e)));
+                            }
+                        }
+                    }
+                    sleep_btn.on_hover_text("Put remote workstation to sleep (systemctl suspend) and enter Standby");
+                    ui.add_space(metrics::SPACE_SM);
+
+                    let off_btn = flow_button(ui, "Turn Off  [Ctrl+Shift+P]", colors::ERR, colors::BTN_LABEL_ON_LIGHT);
+                    if off_btn.clicked() {
+                        match self.pipeline.trigger_power_action(&self.current_profile, "shutdown") {
+                            Ok(m) => {
+                                self.power_status = Some(m);
+                                self.add_toast(Toast::info("Workstation powered off"));
+                            }
+                            Err(e) => {
+                                self.power_status = Some(format!("Error: {}", e));
+                                self.add_toast(Toast::error(format!("Shutdown failed: {}", e)));
+                            }
+                        }
+                    }
+                    off_btn.on_hover_text("Completely power down machine (sudo systemctl poweroff) and enter Standby");
+                    ui.add_space(metrics::SPACE_SM);
+                }
+
                 let wol_btn = flow_button(ui, "Re-send WOL  [F5]", colors::BTN_BG, colors::TEXT);
                 if wol_btn.clicked() {
                     self.pipeline.send_wol(&self.current_profile);
@@ -387,7 +477,7 @@ impl WakeApp {
 
                 ui.add_space(metrics::SPACE_SM);
 
-                let pwr_btn = flow_button(ui, "Power", colors::BTN_BG, colors::TEXT);
+                let pwr_btn = flow_button(ui, "Power Menu", colors::BTN_BG, colors::TEXT);
                 if pwr_btn.clicked() {
                     self.power_status = None;
                     self.pending_power_action = None;
@@ -428,6 +518,38 @@ impl WakeApp {
                 }
                 wake_btn.on_hover_text(hover_text);
 
+                if is_ready {
+                    let sleep_btn = flow_button(ui, "Sleep Host  [Ctrl+P]", colors::WARN, colors::BTN_LABEL_ON_LIGHT);
+                    if sleep_btn.clicked() {
+                        match self.pipeline.trigger_power_action(&self.current_profile, "suspend") {
+                            Ok(m) => {
+                                self.power_status = Some(m);
+                                self.add_toast(Toast::info("Workstation put to sleep"));
+                            }
+                            Err(e) => {
+                                self.power_status = Some(format!("Error: {}", e));
+                                self.add_toast(Toast::error(format!("Sleep failed: {}", e)));
+                            }
+                        }
+                    }
+                    sleep_btn.on_hover_text("Put remote workstation to sleep (systemctl suspend) and enter Standby");
+
+                    let off_btn = flow_button(ui, "Turn Off  [Ctrl+Shift+P]", colors::ERR, colors::BTN_LABEL_ON_LIGHT);
+                    if off_btn.clicked() {
+                        match self.pipeline.trigger_power_action(&self.current_profile, "shutdown") {
+                            Ok(m) => {
+                                self.power_status = Some(m);
+                                self.add_toast(Toast::info("Workstation powered off"));
+                            }
+                            Err(e) => {
+                                self.power_status = Some(format!("Error: {}", e));
+                                self.add_toast(Toast::error(format!("Shutdown failed: {}", e)));
+                            }
+                        }
+                    }
+                    off_btn.on_hover_text("Completely power down machine (sudo systemctl poweroff) and enter Standby");
+                }
+
                 let wol_btn = flow_button(ui, "Re-send WOL  [F5]", colors::BTN_BG, colors::TEXT);
                 if wol_btn.clicked() {
                     self.pipeline.send_wol(&self.current_profile);
@@ -435,7 +557,7 @@ impl WakeApp {
                 }
                 wol_btn.on_hover_text("Broadcast magic packet immediately to MAC address (Shortcut: F5)");
 
-                let pwr_btn = flow_button(ui, "Power", colors::BTN_BG, colors::TEXT);
+                let pwr_btn = flow_button(ui, "Power Menu", colors::BTN_BG, colors::TEXT);
                 if pwr_btn.clicked() {
                     self.power_status = None;
                     self.pending_power_action = None;

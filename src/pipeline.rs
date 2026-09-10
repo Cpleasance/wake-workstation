@@ -1,25 +1,39 @@
+//! Asynchronous state machine and execution pipeline for waking workstations.
+//!
+//! Orchestrates the multi-stage wake sequence:
+//! `Standby` -> `Wol` -> `Ping` -> `Ssh` -> `Sunshine` -> `Ready` (or `Timeout`).
+
 use crate::config::HostProfile;
 use crate::net::{
-    check_ping, check_tcp_port, execute_power_action, format_latency, launch_moonlight,
-    play_system_sound, send_magic_packet, send_ssh_wol, SoundType,
+    check_ping, check_tcp_port, execute_power_action_with_options, format_latency,
+    launch_moonlight, play_system_sound, send_magic_packet, send_ssh_wol_with_options, SoundType,
 };
 use chrono::Local;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+/// Stages representing the progressive verification lifecycle of the remote host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
+    /// Idle standby state awaiting user wake request.
     Standby,
+    /// Magic packet dispatched via direct UDP broadcast or SSH Pi gateway.
     Wol,
+    /// Polling host via ICMP ping.
     Ping,
+    /// Host responded to ping; polling SSH daemon port.
     Ssh,
+    /// SSH daemon active; polling Sunshine streaming port.
     Sunshine,
+    /// Host is completely online, verified, and ready for streaming.
     Ready,
+    /// Maximum wait timeout elapsed without reaching Ready.
     Timeout,
 }
 
 impl Stage {
+    /// Returns the short display tag for the stage.
     #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
@@ -33,6 +47,7 @@ impl Stage {
         }
     }
 
+    /// Returns the user-facing description for the stage.
     #[allow(dead_code)]
     pub fn description(&self) -> &'static str {
         match self {
@@ -47,16 +62,23 @@ impl Stage {
     }
 }
 
+/// Categorized severity levels for UI and console log entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
+    /// Informational telemetry and status updates.
     Info,
+    /// Successful milestone completions (e.g. ping reply, port open).
     Ok,
+    /// Non-fatal warnings (e.g. gateway fallback to direct UDP).
     Warn,
+    /// Critical failures and timeouts.
     Err,
+    /// User or automated action dispatches (e.g. sending WoL, launching Moonlight).
     Action,
 }
 
 impl LogLevel {
+    /// Short 2-6 character uppercase tag.
     pub fn tag(&self) -> &'static str {
         match self {
             LogLevel::Info => "INFO",
@@ -68,41 +90,47 @@ impl LogLevel {
     }
 }
 
+/// A single timestamped event log entry.
 #[derive(Debug, Clone)]
 pub struct LogEntry {
+    /// Timestamp when the entry occurred.
     pub timestamp: chrono::DateTime<Local>,
+    /// Log severity level.
     pub level: LogLevel,
+    /// Descriptive message text.
     pub message: String,
 }
 
 /// Result of a background ping/port check performed off the UI thread.
-///
-/// `pub(crate)` (rather than private) so the test module can hold/pass around
-/// `Option<CheckResult>` / `Receiver<CheckResult>` values (via `pending_check`,
-/// `poll_check`, and `disconnected_check_receiver`) without being able to
-/// construct or inspect one -- it never needs to name or read the fields.
 pub(crate) struct CheckResult {
     ping_alive: bool,
     latency: Option<f32>,
     port_open: bool,
 }
 
+/// Pipeline state container managing non-blocking stage transitions, telemetry, and background checks.
 pub struct PipelineState {
+    /// Current state machine stage.
     pub stage: Stage,
-    /// The stage the pipeline was stuck in when it timed out, so the UI can
-    /// show which steps actually completed instead of marking everything as
-    /// failed. `None` while not timed out.
+    /// Stalled stage recorded on timeout.
     pub stalled_stage: Option<Stage>,
+    /// Instant when the wake sequence began.
     pub start_time: Option<Instant>,
+    /// Elapsed seconds since initiation.
     pub elapsed_secs: u64,
+    /// Most recent ICMP ping latency in milliseconds.
     pub last_latency: Option<f32>,
+    /// Circular buffer of recent latency samples for sparkline plotting.
     pub latency_history: Vec<f32>,
+    /// Cumulative count of Wake-on-LAN packet dispatches.
     pub wol_count: u32,
     pub last_wol_time: Option<Instant>,
     pub is_finished: bool,
     pub auto_launched_moonlight: bool,
     pub status_message: String,
     pub logs: Vec<LogEntry>,
+    pub consecutive_failed_checks: u32,
+    pub last_power_action_time: Option<Instant>,
     // Background check in flight for `stage`, if any. Only one check runs at a
     // time; a new thread is spawned only once the previous one's result has
     // been consumed (or the stage changed), so tick() never blocks the caller.
@@ -137,6 +165,8 @@ impl PipelineState {
             auto_launched_moonlight: false,
             status_message: "Initializing wake sequence...".to_string(),
             logs: Vec::new(),
+            consecutive_failed_checks: 0,
+            last_power_action_time: None,
             pending_check: None,
             last_check_completed: None,
             last_checked_stage: None,
@@ -234,10 +264,20 @@ impl PipelineState {
         self.pending_check = None;
         self.last_check_completed = None;
         self.last_checked_stage = None;
+        self.consecutive_failed_checks = 0;
         self.log(LogLevel::Warn, format!("Safe Standby engaged: {}", reason));
     }
 
     pub fn reset(&mut self, config: &HostProfile) {
+        if let Some(t) = self.last_power_action_time {
+            if t.elapsed() < Duration::from_secs(3) {
+                self.log(
+                    LogLevel::Warn,
+                    "Wake sequence ignored: remote power action was recently dispatched",
+                );
+                return;
+            }
+        }
         self.stage = Stage::Wol;
         self.stalled_stage = None;
         self.start_time = Some(Instant::now());
@@ -252,6 +292,7 @@ impl PipelineState {
         self.pending_check = None;
         self.last_check_completed = None;
         self.last_checked_stage = None;
+        self.consecutive_failed_checks = 0;
         self.log(
             LogLevel::Action,
             format!(
@@ -303,12 +344,13 @@ impl PipelineState {
                     config.pi_user, config.pi_host, self.wol_count
                 ),
             );
-            match send_ssh_wol(
+            match send_ssh_wol_with_options(
                 &config.pi_user,
                 &config.pi_host,
                 config.pi_ssh_port,
                 &config.broadcast_addr,
                 &config.mac_address,
+                config.ssh_strict_host_key_checking,
             ) {
                 Ok(msg) => {
                     let detail = if msg.is_empty() {
@@ -346,6 +388,7 @@ impl PipelineState {
         }
     }
 
+    /// Advances the pipeline state machine by one verification tick.
     pub fn tick(&mut self, config: &HostProfile, auto_launch_moonlight: bool) {
         if self.stage == Stage::Standby {
             return;
@@ -497,9 +540,22 @@ impl PipelineState {
                 }
             }
             Stage::Ready => {
-                // Keep polling ping latency for real-time connection telemetry
+                // Keep polling ping latency for real-time connection telemetry.
+                // Automatically transition back to Standby if the host goes down.
                 if let Some(result) = self.poll_check(config, Stage::Ready) {
                     self.update_latency(result.latency);
+                    if !result.ping_alive {
+                        self.consecutive_failed_checks += 1;
+                        if self.consecutive_failed_checks >= 3 {
+                            self.log(
+                                LogLevel::Warn,
+                                format!("Workstation {} went offline. Entering Standby.", config.thinkstation_ip),
+                            );
+                            self.enter_standby("Workstation went offline or sleeping");
+                        }
+                    } else {
+                        self.consecutive_failed_checks = 0;
+                    }
                 }
             }
         }
@@ -550,6 +606,7 @@ impl PipelineState {
         }
     }
 
+    /// Triggers a remote power management action via SSH.
     pub fn trigger_power_action(
         &mut self,
         config: &HostProfile,
@@ -563,12 +620,15 @@ impl PipelineState {
             ),
         );
 
-        let res = execute_power_action(
+        let res = execute_power_action_with_options(
             &config.thinkstation_ip,
             &config.thinkstation_user,
             action,
             config.ssh_port,
+            config.ssh_strict_host_key_checking,
         );
+
+        self.last_power_action_time = Some(Instant::now());
 
         match res {
             Ok(msg) => {
@@ -628,9 +688,9 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
                 }
             }
             Stage::Ready => {
-                let (_, latency) = check_ping(&host, 1);
+                let (alive, latency) = check_ping(&host, 1);
                 CheckResult {
-                    ping_alive: false,
+                    ping_alive: alive,
                     latency,
                     port_open: false,
                 }
@@ -641,18 +701,12 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
                 port_open: false,
             },
         };
-        // Ignore send errors: the receiver may have been dropped if the
-        // pipeline moved on (reset, stage change) before this finished.
         let _ = tx.send(result);
     });
 
     rx
 }
 
-/// Test-only helper: build a `Receiver<CheckResult>` whose sender has already
-/// been dropped without sending, so `poll_check` observes
-/// `TryRecvError::Disconnected` on the very first poll. Used to exercise that
-/// branch deterministically instead of relying on a background thread dying.
 #[cfg(test)]
 pub(crate) fn disconnected_check_receiver() -> Receiver<CheckResult> {
     let (tx, rx) = mpsc::channel();
@@ -660,7 +714,7 @@ pub(crate) fn disconnected_check_receiver() -> Receiver<CheckResult> {
     rx
 }
 
-/// Run pipeline in CLI terminal mode.
+/// Runs the multi-stage wake sequence in headless terminal CLI mode.
 pub fn run_cli_pipeline(config: HostProfile, auto_launch_moonlight: bool) -> Result<(), String> {
     let mut state = PipelineState::new();
     state.reset(&config);

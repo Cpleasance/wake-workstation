@@ -211,7 +211,8 @@ pub fn send_magic_packet(mac: &str, broadcast_ip: &str, port: u16) -> Result<(),
     }
 }
 
-/// Send WOL packet via Raspberry Pi SSH gateway if configured.
+/// Sends a Wake-on-LAN packet via a remote SSH gateway host (default StrictHostKeyChecking=accept-new).
+#[allow(dead_code)]
 pub fn send_ssh_wol(
     pi_user: &str,
     pi_host: &str,
@@ -219,24 +220,35 @@ pub fn send_ssh_wol(
     broadcast_ip: &str,
     mac: &str,
 ) -> Result<String, String> {
-    // `broadcast_ip` and `mac` are interpolated directly into a command
-    // string that gets executed by the *remote* host's shell (`sh -c ...`)
-    // once it reaches `ssh`, so they must be strictly validated here even
-    // though callers (config::validate_settings) should already have done
-    // so -- this function must never trust its inputs implicitly.
+    send_ssh_wol_with_options(pi_user, pi_host, pi_ssh_port, broadcast_ip, mac, false)
+}
+
+/// Sends a Wake-on-LAN packet via a remote SSH gateway host with configurable host key checking.
+pub fn send_ssh_wol_with_options(
+    pi_user: &str,
+    pi_host: &str,
+    pi_ssh_port: u16,
+    broadcast_ip: &str,
+    mac: &str,
+    strict_host_key_checking: bool,
+) -> Result<String, String> {
     validate_host_token(pi_user, "Pi gateway user")?;
     validate_host_token(pi_host, "Pi gateway host")?;
     validate_host_token(broadcast_ip, "Broadcast address")?;
-    // Reuses create_magic_packet's strict MAC validation; the packet itself
-    // is discarded here, only the validation result matters.
     create_magic_packet(mac)?;
+
+    let host_key_opt = if strict_host_key_checking {
+        "StrictHostKeyChecking=yes"
+    } else {
+        "StrictHostKeyChecking=accept-new"
+    };
 
     let wol_cmd = format!("wakeonlan -i {} {}", broadcast_ip, mac.trim());
     let port_str = pi_ssh_port.to_string();
     let output = hidden_command("ssh")
         .args([
             "-o",
-            "StrictHostKeyChecking=accept-new",
+            host_key_opt,
             "-o",
             "ConnectTimeout=8",
             "-o",
@@ -471,12 +483,24 @@ pub fn check_tcp_port(host: &str, port: u16, timeout_ms: u64) -> bool {
     false
 }
 
-/// Remote SSH execution of power actions (suspend, reboot, shutdown).
+/// Remote SSH execution of power actions (suspend, reboot, shutdown) with default host key policy.
+#[allow(dead_code)]
 pub fn execute_power_action(
     host: &str,
     user: &str,
     action: &str,
     port: u16,
+) -> Result<String, String> {
+    execute_power_action_with_options(host, user, action, port, false)
+}
+
+/// Remote SSH execution of power actions with configurable strict host key checking.
+pub fn execute_power_action_with_options(
+    host: &str,
+    user: &str,
+    action: &str,
+    port: u16,
+    strict_host_key_checking: bool,
 ) -> Result<String, String> {
     let cmd_str = match action.to_lowercase().as_str() {
         "suspend" => "sudo -n systemctl suspend || systemctl suspend",
@@ -487,13 +511,14 @@ pub fn execute_power_action(
         other => return Err(format!("Unknown power action '{}'", other)),
     };
 
-    // Defense-in-depth: host/user ultimately come from config file or CLI
-    // args and are folded into the `user@host` SSH target argument. `cmd_str`
-    // above is always a fixed literal (never built from `host`/`user`), so
-    // there is no remote shell-injection vector here, but we still reject
-    // malformed values so they can't be misparsed as SSH options.
     validate_host_token(user, "SSH user")?;
     validate_host_token(host, "SSH host")?;
+
+    let host_key_opt = if strict_host_key_checking {
+        "StrictHostKeyChecking=yes"
+    } else {
+        "StrictHostKeyChecking=accept-new"
+    };
 
     let target = format!("{}@{}", user.trim(), host.trim());
     let port_str = port.to_string();
@@ -501,7 +526,7 @@ pub fn execute_power_action(
     let output = hidden_command("ssh")
         .args([
             "-o",
-            "StrictHostKeyChecking=accept-new",
+            host_key_opt,
             "-o",
             "ConnectTimeout=5",
             "-o",

@@ -32,20 +32,25 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 use clap::Parser;
 use config::{default_config_path, load_config_from_path, validate_settings, HostProfile};
 use eframe::egui;
-use net::execute_power_action;
 use pipeline::run_cli_pipeline;
 use std::path::PathBuf;
 use ui::WakeApp;
 
+/// Supported remote power actions for immediate CLI invocation.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PowerAction {
+    /// Put the remote system into sleep / ACPI S3 suspend.
     Suspend,
+    /// Reboot the remote system.
     Reboot,
+    /// Perform a clean ACPI shutdown.
     Shutdown,
+    /// Power off the remote system.
     Poweroff,
 }
 
 impl PowerAction {
+    /// Returns the lowercase command string passed to `systemctl` / `reboot` / `poweroff`.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Suspend => "suspend",
@@ -56,6 +61,7 @@ impl PowerAction {
     }
 }
 
+/// Command-line argument parser for Wake Workstation.
 #[derive(Parser, Debug, Default, Clone)]
 #[command(
     name = "wake-workstation",
@@ -67,7 +73,7 @@ pub struct CliArgs {
     #[arg(long)]
     pub cli: bool,
 
-    /// Configuration profile to activate (e.g. thinkstation, server)
+    /// Configuration profile to activate (e.g. workstation, server)
     #[arg(short, long)]
     pub profile: Option<String>,
 
@@ -119,6 +125,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub ssh_port: Option<u16>,
 
+    /// Enforce strict SSH host key checking (StrictHostKeyChecking=yes)
+    #[arg(long, conflicts_with = "no_strict_host_key_checking")]
+    pub strict_host_key_checking: bool,
+
+    /// Allow automatic acceptance of new host keys (StrictHostKeyChecking=accept-new)
+    #[arg(long, conflicts_with = "strict_host_key_checking")]
+    pub no_strict_host_key_checking: bool,
+
     /// Override Sunshine port
     #[arg(long)]
     pub sunshine_port: Option<u16>,
@@ -148,6 +162,7 @@ pub struct CliArgs {
     pub config: Option<PathBuf>,
 }
 
+/// Applies command-line option overrides to a [`HostProfile`] in memory.
 pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProfile {
     if let Some(target) = &args.target {
         profile.thinkstation_ip = target.clone();
@@ -180,6 +195,11 @@ pub fn apply_cli_overrides(mut profile: HostProfile, args: &CliArgs) -> HostProf
     }
     if let Some(sp) = args.ssh_port {
         profile.ssh_port = sp;
+    }
+    if args.strict_host_key_checking {
+        profile.ssh_strict_host_key_checking = true;
+    } else if args.no_strict_host_key_checking {
+        profile.ssh_strict_host_key_checking = false;
     }
     if let Some(sun_p) = args.sunshine_port {
         profile.sunshine_port = sun_p;
@@ -262,11 +282,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             active_profile.thinkstation_ip,
             active_profile.ssh_port
         );
-        match execute_power_action(
+        match net::execute_power_action_with_options(
             &active_profile.thinkstation_ip,
             &active_profile.thinkstation_user,
             act_str,
             active_profile.ssh_port,
+            active_profile.ssh_strict_host_key_checking,
         ) {
             Ok(msg) => {
                 println!("✅ Success: {}", msg);
