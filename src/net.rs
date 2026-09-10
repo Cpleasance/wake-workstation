@@ -867,7 +867,14 @@ pub fn get_windows_moonlight_lnk_paths() -> Vec<std::path::PathBuf> {
 /// Helper to launch a Windows shortcut (.lnk file) using ShellExecuteW,
 /// falling back to explorer.exe or cmd start if needed.
 #[cfg(windows)]
+#[allow(dead_code)]
 pub fn launch_lnk_file(path: &std::path::Path) -> bool {
+    launch_lnk_file_with_args(path, None)
+}
+
+/// Launch a Windows .lnk shortcut file with optional command-line arguments.
+#[cfg(windows)]
+pub fn launch_lnk_file_with_args(path: &std::path::Path, args: Option<&str>) -> bool {
     if !path.is_file() {
         return false;
     }
@@ -883,12 +890,23 @@ pub fn launch_lnk_file(path: &std::path::Path) -> bool {
         .chain(std::iter::once(0))
         .collect();
 
+    let wide_params: Option<Vec<u16>> = args.map(|a| {
+        std::ffi::OsStr::new(a)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    });
+    let params_ptr = wide_params
+        .as_ref()
+        .map(|v| v.as_ptr())
+        .unwrap_or(std::ptr::null());
+
     let res = unsafe {
         win_sys::ShellExecuteW(
             std::ptr::null_mut(),
             wide_open.as_ptr(),
             wide_path.as_ptr(),
-            std::ptr::null(),
+            params_ptr,
             std::ptr::null(),
             win_sys::SW_SHOWNORMAL,
         )
@@ -904,71 +922,123 @@ pub fn launch_lnk_file(path: &std::path::Path) -> bool {
         return true;
     }
 
-    // Fallback 2: cmd.exe /c start "" "<path>"
-    if hidden_command("cmd.exe")
-        .args(["/c", "start", "", &path.to_string_lossy()])
-        .spawn()
-        .is_ok()
-    {
+    // Fallback 2: cmd.exe /c start "" "<path>" [args]
+    let mut cmd = hidden_command("cmd.exe");
+    cmd.args(["/c", "start", "", &path.to_string_lossy()]);
+    if let Some(a) = args {
+        cmd.arg(a);
+    }
+    if cmd.spawn().is_ok() {
         return true;
     }
 
     false
 }
 
-/// Cross-platform Moonlight launcher.
-pub fn launch_moonlight() -> bool {
-    let candidates = ["moonlight", "Moonlight", "moonlight.exe", "Moonlight.exe"];
+#[cfg(not(windows))]
+pub fn launch_lnk_file_with_args(_path: &std::path::Path, _args: Option<&str>) -> bool {
+    false
+}
 
-    for cand in candidates {
-        if binary_in_path(cand) && hidden_command(cand).spawn().is_ok() {
-            return true;
+/// Cross-platform Moonlight launcher with optional target host and application name.
+/// If `host` is specified, it passes `stream <host> [app]` to Moonlight CLI.
+pub fn launch_moonlight_stream(host: Option<&str>, app: Option<&str>) -> bool {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(h) = host {
+        let h = h.trim();
+        if !h.is_empty() {
+            args.push("stream".to_string());
+            args.push(h.to_string());
+            if let Some(a) = app {
+                let a = a.trim();
+                if !a.is_empty() {
+                    args.push(a.to_string());
+                }
+            }
         }
     }
 
+    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let candidates = ["moonlight", "Moonlight", "moonlight.exe", "Moonlight.exe"];
+
+    // 1. Try PATH binaries
+    for cand in candidates {
+        if binary_in_path(cand) {
+            if !args_ref.is_empty() && hidden_command(cand).args(&args_ref).spawn().is_ok() {
+                return true;
+            }
+            if hidden_command(cand).spawn().is_ok() {
+                return true;
+            }
+        }
+    }
+
+    // 2. Linux Flatpak / Snap
     if cfg!(target_os = "linux") {
-        // Flatpak
         if binary_in_path("flatpak") {
             let check = hidden_command("flatpak")
                 .args(["info", "com.moonlight_stream.Moonlight"])
                 .output();
             if let Ok(res) = check {
-                if res.status.success()
-                    && hidden_command("flatpak")
-                        .args(["run", "com.moonlight_stream.Moonlight"])
-                        .spawn()
-                        .is_ok()
-                {
+                if res.status.success() {
+                    let mut cmd = hidden_command("flatpak");
+                    cmd.args(["run", "com.moonlight_stream.Moonlight"]);
+                    if !args_ref.is_empty() {
+                        cmd.args(&args_ref);
+                    }
+                    if cmd.spawn().is_ok() {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        let snap_path = std::path::Path::new("/snap/bin/moonlight");
+        if snap_path.exists() {
+            let mut cmd = hidden_command(snap_path);
+            if !args_ref.is_empty() {
+                cmd.args(&args_ref);
+            }
+            if cmd.spawn().is_ok() {
+                return true;
+            }
+        }
+    }
+
+    // 3. Windows known executable paths and shortcuts
+    #[cfg(windows)]
+    {
+        for exe_path in get_windows_moonlight_exe_paths() {
+            if exe_path.is_file() {
+                if !args_ref.is_empty() && hidden_command(&exe_path).args(&args_ref).spawn().is_ok() {
+                    return true;
+                }
+                if hidden_command(&exe_path).spawn().is_ok() {
                     return true;
                 }
             }
         }
 
-        // Snap
-        let snap_path = std::path::Path::new("/snap/bin/moonlight");
-        if snap_path.exists() && hidden_command(snap_path).spawn().is_ok() {
-            return true;
-        }
-    }
+        let args_str = if args_ref.is_empty() {
+            None
+        } else {
+            Some(args_ref.join(" "))
+        };
 
-    #[cfg(windows)]
-    {
-        // 1. Check known executable directories (Program Files, LocalAppData, WinGet links, Scoop shims, Chocolatey)
-        for exe_path in get_windows_moonlight_exe_paths() {
-            if exe_path.is_file() && hidden_command(&exe_path).spawn().is_ok() {
-                return true;
-            }
-        }
-
-        // 2. Check Desktop and Start Menu shortcuts (.lnk files), falling back to ShellExecuteW / explorer / cmd start
         for lnk_path in get_windows_moonlight_lnk_paths() {
-            if lnk_path.is_file() && launch_lnk_file(&lnk_path) {
+            if lnk_path.is_file() && launch_lnk_file_with_args(&lnk_path, args_str.as_deref()) {
                 return true;
             }
         }
     }
 
     false
+}
+
+/// Cross-platform Moonlight launcher without arguments.
+#[allow(dead_code)]
+pub fn launch_moonlight() -> bool {
+    launch_moonlight_stream(None, None)
 }
 
 /// Query the OS ARP cache to discover or verify the MAC address for a given LAN IP.

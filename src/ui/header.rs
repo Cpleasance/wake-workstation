@@ -221,24 +221,42 @@ impl WakeApp {
         };
 
         let mut open_settings = false;
+        let mut open_shortcuts = false;
+
+        let render_shortcuts_btn = |ui: &mut egui::Ui, open: &mut bool| {
+            let btn = flow_button(ui, "?", colors::BTN_BG, colors::TEXT);
+            if btn.clicked() {
+                *open = true;
+            }
+            btn.on_hover_text("Keyboard Shortcuts & Help (Shortcut: F1 or ?)");
+        };
+
         let render_settings_btn = |ui: &mut egui::Ui, open: &mut bool| {
             let settings_btn = flow_button(ui, "Settings", colors::BTN_BG, colors::TEXT);
             if settings_btn.clicked() {
                 *open = true;
             }
             settings_btn.on_hover_text(
-                "Open settings & profile manager (Shortcut: Ctrl+S to save in settings)",
+                "Open settings & profile manager (Shortcut: Ctrl+, or click; Ctrl+S to save in settings)",
             );
         };
 
         if is_right_aligned {
+            render_shortcuts_btn(ui, &mut open_shortcuts);
+            ui.add_space(metrics::SPACE_XS);
             render_settings_btn(ui, &mut open_settings);
             ui.add_space(metrics::SPACE_SM);
             render_chip(ui);
         } else {
             render_chip(ui);
             ui.add_space(metrics::SPACE_SM);
+            render_shortcuts_btn(ui, &mut open_shortcuts);
+            ui.add_space(metrics::SPACE_XS);
             render_settings_btn(ui, &mut open_settings);
+        }
+
+        if open_shortcuts {
+            self.show_shortcuts_modal = true;
         }
 
         if open_settings {

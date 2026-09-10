@@ -6,7 +6,8 @@
 use crate::config::HostProfile;
 use crate::net::{
     check_ping, check_tcp_port, execute_power_action_with_options, format_latency,
-    launch_moonlight, play_system_sound, send_magic_packet, send_ssh_wol_with_options, SoundType,
+    launch_moonlight_stream, play_system_sound, send_magic_packet,
+    send_ssh_wol_with_options, SoundType,
 };
 use chrono::Local;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -260,6 +261,8 @@ impl PipelineState {
         self.stalled_stage = None;
         self.start_time = None;
         self.is_finished = true;
+        self.last_latency = None;
+        self.latency_history.clear();
         self.status_message = format!("Standby: {}", reason);
         self.pending_check = None;
         self.last_check_completed = None;
@@ -522,7 +525,7 @@ impl PipelineState {
                         if auto_launch_moonlight && !self.auto_launched_moonlight {
                             self.auto_launched_moonlight = true;
                             self.log(LogLevel::Action, "Launching Moonlight streaming client...");
-                            if launch_moonlight() {
+                            if launch_moonlight_stream(Some(&config.thinkstation_ip), None) {
                                 self.log(LogLevel::Ok, "Moonlight client spawned successfully");
                             } else {
                                 self.log(
@@ -636,6 +639,7 @@ impl PipelineState {
                 if action == "suspend" || action == "shutdown" || action == "poweroff" {
                     self.enter_standby(&format!("Host {}", action));
                 } else if action == "reboot" {
+                    self.last_power_action_time = None;
                     self.reset(config);
                 }
                 Ok(msg)
@@ -662,7 +666,10 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
     thread::spawn(move || {
         let result = match stage {
             Stage::Ping => {
-                let (alive, latency) = check_ping(&host, 1);
+                let (mut alive, latency) = check_ping(&host, 1);
+                if !alive && (check_tcp_port(&host, sunshine_port, 300) || check_tcp_port(&host, ssh_port, 300)) {
+                    alive = true;
+                }
                 CheckResult {
                     ping_alive: alive,
                     latency,
@@ -688,7 +695,10 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
                 }
             }
             Stage::Ready => {
-                let (alive, latency) = check_ping(&host, 1);
+                let (mut alive, latency) = check_ping(&host, 1);
+                if !alive && (check_tcp_port(&host, sunshine_port, 300) || check_tcp_port(&host, ssh_port, 300)) {
+                    alive = true;
+                }
                 CheckResult {
                     ping_alive: alive,
                     latency,

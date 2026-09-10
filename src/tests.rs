@@ -666,10 +666,14 @@ fn test_pipeline_standby_and_reset_lifecycle() {
     assert_eq!(state.stage, Stage::Wol);
 
     // 2. Enter safe standby
+    state.last_latency = Some(2.4);
+    state.latency_history.push(2.4);
     state.enter_standby("Manual standby requested");
     assert_eq!(state.stage, Stage::Standby);
     assert!(state.is_finished);
     assert!(state.start_time.is_none());
+    assert!(state.last_latency.is_none());
+    assert!(state.latency_history.is_empty());
     assert!(state
         .status_message
         .contains("Standby: Manual standby requested"));
@@ -815,6 +819,20 @@ fn test_pipeline_power_actions_trigger_standby_and_reset() {
 
     // Action with invalid host token fails safely without executing shell commands
     assert!(state.trigger_power_action(&profile, "suspend").is_err());
+
+    // Test power action cooldown guard and reboot bypass
+    let valid_profile = HostProfile::default();
+    state.enter_standby("Host offline");
+    state.last_power_action_time = Some(Instant::now());
+
+    // reset() ignored while cooldown is active
+    state.reset(&valid_profile);
+    assert_eq!(state.stage, Stage::Standby);
+
+    // Cooldown cleared (e.g. intentionally by reboot action) allows reset() to proceed immediately
+    state.last_power_action_time = None;
+    state.reset(&valid_profile);
+    assert_eq!(state.stage, Stage::Ping);
 }
 
 #[test]
@@ -1927,6 +1945,7 @@ fn test_modal_keyboard_shortcuts_and_background_isolation() {
         show_json_config_dialog: false,
         json_config_input: String::new(),
         json_config_is_export: false,
+        show_shortcuts_modal: false,
         console_collapsed: false,
         console_level_filter: None,
         console_search_query: String::new(),
@@ -2082,6 +2101,7 @@ fn test_new_profile_modal_validation_and_creation() {
         show_json_config_dialog: false,
         json_config_input: String::new(),
         json_config_is_export: false,
+        show_shortcuts_modal: false,
         console_collapsed: false,
         console_level_filter: None,
         console_search_query: String::new(),
@@ -3332,4 +3352,65 @@ fn test_config_error_display_and_traits() {
 
     let str_converted: String = err_empty.into();
     assert_eq!(str_converted, "Target IP cannot be empty");
+}
+
+#[test]
+fn test_shortcuts_modal_state_and_dialog_lifecycle() {
+    use crate::ui::WakeApp;
+    use std::path::PathBuf;
+
+    let app_cfg = AppConfig::default();
+    let prof = app_cfg.get_active_profile();
+    let mut app = WakeApp {
+        app_config: app_cfg,
+        current_profile: prof.clone(),
+        config_path: PathBuf::from("config.json"),
+        auto_launch_moonlight: false,
+        pipeline: PipelineState::new(),
+        show_settings: false,
+        settings_tab: 0,
+        show_power_modal: false,
+        pending_power_action: None,
+        settings_edit_profile: prof.clone(),
+        settings_profile_name: "workstation".to_string(),
+        settings_error: None,
+        power_status: None,
+        reachability_state: crate::ui::ReachabilityState::Idle,
+        reachability_rx: None,
+        toasts: Vec::new(),
+        show_new_profile_dialog: false,
+        new_profile_name_input: String::new(),
+        show_json_config_dialog: false,
+        json_config_input: String::new(),
+        json_config_is_export: false,
+        show_shortcuts_modal: false,
+        console_collapsed: false,
+        console_level_filter: None,
+        console_search_query: String::new(),
+        console_auto_scroll: true,
+    };
+
+    assert!(!app.show_shortcuts_modal);
+    app.show_shortcuts_modal = true;
+    assert!(app.show_shortcuts_modal);
+
+    // Escape or close toggle
+    app.show_shortcuts_modal = false;
+    assert!(!app.show_shortcuts_modal);
+}
+
+#[test]
+fn test_launch_moonlight_stream_interface() {
+    use crate::net::launch_lnk_file_with_args;
+    use std::path::PathBuf;
+
+    // Non-existent shortcut returns false safely without error
+    assert!(!launch_lnk_file_with_args(
+        &PathBuf::from("C:\\non_existent_stream_target.lnk"),
+        Some("stream 10.0.0.1 Desktop")
+    ));
+    assert!(!launch_lnk_file_with_args(
+        &PathBuf::from("C:\\non_existent_stream_target.lnk"),
+        None
+    ));
 }

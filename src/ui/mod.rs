@@ -5,12 +5,13 @@ pub mod json_config_modal;
 pub mod new_profile_modal;
 pub mod power_modal;
 pub mod settings_modal;
+pub mod shortcuts_modal;
 pub mod stepper;
 pub mod theme;
 pub mod toast;
 
 use crate::config::{AppConfig, HostProfile};
-use crate::net::launch_moonlight;
+use crate::net::launch_moonlight_stream;
 use crate::pipeline::{LogLevel, PipelineState, Stage};
 use crate::ui::theme::{apply_custom_theme, colors, flow_button, metrics};
 use crate::ui::toast::{render_toasts, Toast};
@@ -72,6 +73,9 @@ pub struct WakeApp {
     pub json_config_input: String,
     pub json_config_is_export: bool,
 
+    // Keyboard Shortcuts Modal state
+    pub show_shortcuts_modal: bool,
+
     // Console filters & collapse state
     pub console_collapsed: bool,
     pub console_level_filter: Option<LogLevel>,
@@ -117,6 +121,7 @@ impl WakeApp {
             show_json_config_dialog: false,
             json_config_input: String::new(),
             json_config_is_export: false,
+            show_shortcuts_modal: false,
             console_collapsed: false,
             console_level_filter: None,
             console_search_query: String::new(),
@@ -136,6 +141,9 @@ impl WakeApp {
         let mut send_wol = false;
         let mut clear_log = false;
         let mut toggle_console = false;
+        let mut toggle_shortcuts = false;
+        let mut toggle_settings = false;
+        let mut toggle_power_modal = false;
         let mut save_modal = false;
         let mut close_escape = false;
         let mut confirm_power_action = false;
@@ -148,7 +156,8 @@ impl WakeApp {
         let any_modal_open = self.show_settings
             || self.show_power_modal
             || self.show_new_profile_dialog
-            || self.show_json_config_dialog;
+            || self.show_json_config_dialog
+            || self.show_shortcuts_modal;
 
         // Must be read before entering `ctx.input()` below -- egui's Context
         // locks its input state for the duration of that closure, and
@@ -170,10 +179,6 @@ impl WakeApp {
                 save_modal = true;
             }
 
-            if (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::T) {
-                toggle_console = true;
-            }
-
             if self.show_power_modal {
                 if self.pending_power_action.is_some() {
                     if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space) {
@@ -191,6 +196,24 @@ impl WakeApp {
             }
 
             if !wants_keyboard_input && !any_modal_open {
+                if i.key_pressed(egui::Key::F1)
+                    || (i.modifiers.shift && i.key_pressed(egui::Key::Slash))
+                {
+                    toggle_shortcuts = true;
+                }
+
+                if (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::Comma) {
+                    toggle_settings = true;
+                }
+
+                if i.modifiers.alt && i.key_pressed(egui::Key::P) {
+                    toggle_power_modal = true;
+                }
+
+                if (i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::T) {
+                    toggle_console = true;
+                }
+
                 if i.key_pressed(egui::Key::F5)
                     || ((i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::R))
                 {
@@ -214,36 +237,32 @@ impl WakeApp {
                     clear_log = true;
                 }
 
-                if !self.show_settings
-                    && !self.show_power_modal
-                    && !self.show_new_profile_dialog
-                    && !self.show_json_config_dialog
-                {
-                    let in_power_cooldown = self
-                        .pipeline
-                        .last_power_action_time
-                        .map(|t| t.elapsed() < std::time::Duration::from_millis(2000))
-                        .unwrap_or(false);
+                let in_power_cooldown = self
+                    .pipeline
+                    .last_power_action_time
+                    .map(|t| t.elapsed() < std::time::Duration::from_millis(2000))
+                    .unwrap_or(false);
 
-                    if !in_power_cooldown {
-                        if self.pipeline.stage == Stage::Standby {
-                            if i.key_pressed(egui::Key::Space) {
-                                reset_pipeline = true;
-                            }
-                        } else if self.pipeline.stage == Stage::Ready {
-                            if i.key_pressed(egui::Key::Space) || i.key_pressed(egui::Key::Enter) {
-                                launch_stream = true;
-                            }
-                        } else if i.key_pressed(egui::Key::Space) {
+                if !in_power_cooldown {
+                    if self.pipeline.stage == Stage::Standby {
+                        if i.key_pressed(egui::Key::Space) {
                             reset_pipeline = true;
                         }
+                    } else if self.pipeline.stage == Stage::Ready {
+                        if i.key_pressed(egui::Key::Space) || i.key_pressed(egui::Key::Enter) {
+                            launch_stream = true;
+                        }
+                    } else if i.key_pressed(egui::Key::Space) {
+                        reset_pipeline = true;
                     }
                 }
             }
         });
 
         if close_escape {
-            if self.show_json_config_dialog {
+            if self.show_shortcuts_modal {
+                self.show_shortcuts_modal = false;
+            } else if self.show_json_config_dialog {
                 self.show_json_config_dialog = false;
             } else if self.show_new_profile_dialog {
                 self.show_new_profile_dialog = false;
@@ -256,6 +275,22 @@ impl WakeApp {
                     self.show_power_modal = false;
                 }
             }
+        }
+
+        if toggle_shortcuts {
+            self.show_shortcuts_modal = !self.show_shortcuts_modal;
+        }
+
+        if toggle_settings {
+            self.settings_edit_profile = self.current_profile.clone();
+            self.settings_profile_name = self.app_config.active_profile.clone();
+            self.settings_error = None;
+            self.show_settings = !self.show_settings;
+        }
+
+        if toggle_power_modal {
+            self.show_power_modal = !self.show_power_modal;
+            self.pending_power_action = None;
         }
 
         if confirm_power_action {
@@ -325,7 +360,7 @@ impl WakeApp {
                 LogLevel::Action,
                 "Manual Moonlight launch requested (Space/Enter)",
             );
-            if launch_moonlight() {
+            if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
                 self.pipeline
                     .log(LogLevel::Ok, "Moonlight streaming client opened");
                 self.add_toast(Toast::success("Moonlight streaming client opened"));
@@ -415,7 +450,7 @@ impl WakeApp {
                 if wake_btn.clicked() {
                     if is_ready {
                         self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
-                        if launch_moonlight() {
+                        if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
                             self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
                             self.add_toast(Toast::success("Moonlight streaming client opened"));
                         } else {
@@ -477,13 +512,13 @@ impl WakeApp {
 
                 ui.add_space(metrics::SPACE_SM);
 
-                let pwr_btn = flow_button(ui, "Power Menu", colors::BTN_BG, colors::TEXT);
+                let pwr_btn = flow_button(ui, "Power Menu  [Alt+P]", colors::BTN_BG, colors::TEXT);
                 if pwr_btn.clicked() {
                     self.power_status = None;
                     self.pending_power_action = None;
                     self.show_power_modal = true;
                 }
-                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown)");
+                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown) (Shortcut: Alt+P)");
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let close_btn = flow_button(ui, "Close", colors::BTN_BG, colors::TEXT_MUTED);
@@ -501,7 +536,7 @@ impl WakeApp {
                 if wake_btn.clicked() {
                     if is_ready {
                         self.pipeline.log(LogLevel::Action, "Manual Moonlight launch requested");
-                        if launch_moonlight() {
+                        if launch_moonlight_stream(Some(&self.current_profile.thinkstation_ip), None) {
                             self.pipeline.log(LogLevel::Ok, "Moonlight streaming client opened");
                             self.add_toast(Toast::success("Moonlight streaming client opened"));
                         } else {
@@ -557,13 +592,13 @@ impl WakeApp {
                 }
                 wol_btn.on_hover_text("Broadcast magic packet immediately to MAC address (Shortcut: F5)");
 
-                let pwr_btn = flow_button(ui, "Power Menu", colors::BTN_BG, colors::TEXT);
+                let pwr_btn = flow_button(ui, "Power Menu  [Alt+P]", colors::BTN_BG, colors::TEXT);
                 if pwr_btn.clicked() {
                     self.power_status = None;
                     self.pending_power_action = None;
                     self.show_power_modal = true;
                 }
-                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown)");
+                pwr_btn.on_hover_text("Remote power controls (Suspend, Reboot, Shutdown) (Shortcut: Alt+P)");
 
                 let close_btn = flow_button(ui, "Close", colors::BTN_BG, colors::TEXT_MUTED);
                 if close_btn.clicked() {
@@ -629,19 +664,24 @@ impl eframe::App for WakeApp {
             }
         }
 
+        let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+
         // Stage-aware polling and repaint intervals:
-        // 1. Standby & Timeout: True idle states, throttled to 1500ms to conserve CPU/GPU.
-        // 2. Ready: Host is online; continuously tick live telemetry every 1000ms so the
-        //    latency sparkline graph dynamically populates with continuous real-time samples.
+        // 1. Standby & Timeout: True idle states. Egui will render on-demand when the user
+        //    interacts or when a toast animation is running, conserving CPU/GPU cycles to 0%.
+        // 2. Ready: Host is online; continuously poll live connection telemetry. When minimized,
+        //    throttle polling to 3000ms to avoid unnecessary background wakeups.
         // 3. Active wake stages (Wol, Ping, Ssh, Sunshine): Tick fast (200ms) for responsive progression.
         match self.pipeline.stage {
-            Stage::Standby | Stage::Timeout => {
-                ctx.request_repaint_after(Duration::from_millis(1500));
-            }
+            Stage::Standby | Stage::Timeout => {}
             Stage::Ready => {
                 self.pipeline
                     .tick(&self.current_profile, self.auto_launch_moonlight);
-                ctx.request_repaint_after(Duration::from_millis(600));
+                if is_minimized {
+                    ctx.request_repaint_after(Duration::from_millis(3000));
+                } else {
+                    ctx.request_repaint_after(Duration::from_millis(600));
+                }
             }
             _ => {
                 self.pipeline
@@ -737,6 +777,7 @@ impl eframe::App for WakeApp {
 
         self.render_settings_modal(ctx);
         self.render_power_modal(ctx);
+        self.render_shortcuts_modal(ctx);
         self.render_new_profile_dialog(ctx);
         self.render_json_config_dialog(ctx);
 
