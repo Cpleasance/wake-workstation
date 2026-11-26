@@ -1,4 +1,4 @@
-# Wake Workstation
+# WakeWorkstation ⚡ — One-Click Remote PC Wake, Health Check & Moonlight Launcher
 
 <div align="center">
 
@@ -9,7 +9,7 @@
 [![GUI: egui](https://img.shields.io/badge/GUI-egui%20%2F%20eframe-brightgreen)](https://github.com/emilk/egui)
 [![Streaming: Moonlight + Sunshine](https://img.shields.io/badge/Streaming-Moonlight%20%2B%20Sunshine-9cf)](https://moonlight-stream.org)
 
-**A high-performance, cross-platform (Windows / Linux / macOS) Rust desktop GUI + CLI orchestrator that automates the entire "Wake gaming PC / workstation, verify services, and stream" pipeline for [Moonlight](https://moonlight-stream.org/) and [Sunshine](https://github.com/LizardByte/Sunshine).**
+**A high-performance, cross-platform (Windows / Linux / macOS) Rust desktop GUI + CLI orchestrator that automates the entire "Wake PC via local WOL or Raspberry Pi SSH relay, verify services, and stream" pipeline for [Moonlight](https://moonlight-stream.org/) and [Sunshine](https://github.com/LizardByte/Sunshine).**
 
 [Quickstart](#quickstart) • [Features](#key-features) • [CLI Reference](#cli-flag-reference) • [Configuration](#configuration) • [Moonlight & Sunshine Setup](#moonlight--sunshine-complete-setup-guide) • [Architecture](#architecture--pipeline-stages) • [Troubleshooting](#troubleshooting)
 
