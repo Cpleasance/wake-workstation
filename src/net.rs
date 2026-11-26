@@ -77,6 +77,7 @@ pub fn play_system_sound(sound: SoundType) {
 /// process would otherwise pop up on Windows. Behaves exactly like
 /// `Command::new` on other platforms.
 fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[allow(unused_mut)]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -928,14 +929,11 @@ pub fn launch_lnk_file_with_args(path: &std::path::Path, args: Option<&str>) -> 
     if let Some(a) = args {
         cmd.arg(a);
     }
-    if cmd.spawn().is_ok() {
-        return true;
-    }
-
-    false
+    cmd.spawn().is_ok()
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn launch_lnk_file_with_args(_path: &std::path::Path, _args: Option<&str>) -> bool {
     false
 }
