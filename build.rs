@@ -5,7 +5,12 @@ fn main() {
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let out_dir = std::env::var("OUT_DIR").unwrap();
 
-        println!("cargo:rustc-link-arg-bins={}/gpu_exports.def", manifest_dir);
+        let def_path = std::path::Path::new(&manifest_dir).join("gpu_exports.def");
+        if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+            println!("cargo:rustc-link-arg-bins=/DEF:{}", def_path.display());
+        } else {
+            println!("cargo:rustc-link-arg-bins={}", def_path.display());
+        }
         println!("cargo:rerun-if-changed=gpu_exports.def");
         println!("cargo:rerun-if-changed=app.rc");
         println!("cargo:rerun-if-changed=assets/icon.ico");
