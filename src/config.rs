@@ -47,10 +47,7 @@ pub enum ConfigError {
     /// A required configuration field was empty.
     EmptyField(&'static str),
     /// A network port was outside the valid 1..=65535 range.
-    InvalidPort {
-        field: &'static str,
-        value: u16,
-    },
+    InvalidPort { field: &'static str, value: u16 },
     /// An integer parameter was outside the allowed range.
     OutOfRange {
         field: &'static str,
@@ -61,10 +58,7 @@ pub enum ConfigError {
     /// A MAC address failed format validation.
     InvalidMac(String),
     /// A hostname, IP address, or token contained disallowed shell characters.
-    InvalidHostToken {
-        field: &'static str,
-        reason: String,
-    },
+    InvalidHostToken { field: &'static str, reason: String },
     /// A Pi gateway host was provided without a corresponding username.
     MissingPiUser,
     /// An underlying I/O error occurred during configuration load/save.
@@ -533,7 +527,10 @@ pub fn migrate_config_value(value: &mut serde_json::Value) -> Result<bool, Confi
     let mut modified = false;
     if let Some(obj) = value.as_object_mut() {
         // Upgrade missing or older schema_version
-        let version = obj.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let version = obj
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
         if version < CURRENT_SCHEMA_VERSION {
             obj.insert(
                 "schema_version".to_string(),
@@ -552,7 +549,8 @@ pub fn migrate_config_value(value: &mut serde_json::Value) -> Result<bool, Confi
 
         // Migrate legacy profile dictionary keys if needed
         if let Some(serde_json::Value::Object(profiles)) = obj.get_mut("profiles") {
-            if profiles.contains_key("thinkstation") && !profiles.contains_key(DEFAULT_PROFILE_NAME) {
+            if profiles.contains_key("thinkstation") && !profiles.contains_key(DEFAULT_PROFILE_NAME)
+            {
                 if let Some(val) = profiles.remove("thinkstation") {
                     profiles.insert(DEFAULT_PROFILE_NAME.to_string(), val);
                     modified = true;
@@ -771,4 +769,3 @@ pub fn save_config_to_path(config: &AppConfig, config_file: &Path) -> Result<(),
 
     Ok(())
 }
-

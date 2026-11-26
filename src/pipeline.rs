@@ -6,8 +6,7 @@
 use crate::config::HostProfile;
 use crate::net::{
     check_ping, check_tcp_port, execute_power_action_with_options, format_latency,
-    launch_moonlight, play_system_sound, send_magic_packet,
-    send_ssh_wol_with_options, SoundType,
+    launch_moonlight, play_system_sound, send_magic_packet, send_ssh_wol_with_options, SoundType,
 };
 use chrono::Local;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -552,7 +551,10 @@ impl PipelineState {
                         if self.consecutive_failed_checks >= 3 {
                             self.log(
                                 LogLevel::Warn,
-                                format!("Workstation {} went offline. Entering Standby.", config.thinkstation_ip),
+                                format!(
+                                    "Workstation {} went offline. Entering Standby.",
+                                    config.thinkstation_ip
+                                ),
                             );
                             self.enter_standby("Workstation went offline or sleeping");
                         }
@@ -667,7 +669,10 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
         let result = match stage {
             Stage::Ping => {
                 let (mut alive, latency) = check_ping(&host, 1);
-                if !alive && (check_tcp_port(&host, sunshine_port, 300) || check_tcp_port(&host, ssh_port, 300)) {
+                if !alive
+                    && (check_tcp_port(&host, sunshine_port, 300)
+                        || check_tcp_port(&host, ssh_port, 300))
+                {
                     alive = true;
                 }
                 CheckResult {
@@ -696,7 +701,10 @@ fn spawn_check(config: &HostProfile, stage: Stage) -> Receiver<CheckResult> {
             }
             Stage::Ready => {
                 let (mut alive, latency) = check_ping(&host, 1);
-                if !alive && (check_tcp_port(&host, sunshine_port, 300) || check_tcp_port(&host, ssh_port, 300)) {
+                if !alive
+                    && (check_tcp_port(&host, sunshine_port, 300)
+                        || check_tcp_port(&host, ssh_port, 300))
+                {
                     alive = true;
                 }
                 CheckResult {

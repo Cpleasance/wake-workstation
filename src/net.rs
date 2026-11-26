@@ -1008,7 +1008,8 @@ pub fn launch_moonlight_stream(host: Option<&str>, app: Option<&str>) -> bool {
     {
         for exe_path in get_windows_moonlight_exe_paths() {
             if exe_path.is_file() {
-                if !args_ref.is_empty() && hidden_command(&exe_path).args(&args_ref).spawn().is_ok() {
+                if !args_ref.is_empty() && hidden_command(&exe_path).args(&args_ref).spawn().is_ok()
+                {
                     return true;
                 }
                 if hidden_command(&exe_path).spawn().is_ok() {
