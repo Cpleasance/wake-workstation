@@ -5,6 +5,9 @@ edition = "2021"
 authors = ["Cory Pleasance"]
 license = "MIT"
 description = "Wake-on-LAN + SSH + Moonlight streaming orchestrator for remote workstations & gaming PCs"
+repository = "https://github.com/Cpleasance/wake-workstation"
+homepage = "https://github.com/Cpleasance/wake-workstation"
+readme = "README.md"
 
 [[bin]]
 name = "wake-workstation"

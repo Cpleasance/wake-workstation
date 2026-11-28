@@ -218,6 +218,6 @@ cargo clippy --all-targets -- -D warnings
 
 If you encounter bugs, unexpected behavior, or have ideas for new features:
 
-- Check existing [GitHub Issues](https://github.com/coryp/wake-workstation/issues) to avoid duplicates.
+- Check existing [GitHub Issues](https://github.com/Cpleasance/wake-workstation/issues) to avoid duplicates.
 - Submit a new issue using our structured [Bug Report](.github/ISSUE_TEMPLATE/bug_report.md) or [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) templates.
 - When filing bugs, include sanitized logs, OS details, and network topology context to help us diagnose the issue quickly.

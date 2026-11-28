@@ -2,10 +2,10 @@
 
 <div align="center">
 
-[![CI](https://github.com/coryp/wake-workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/coryp/wake-workstation/actions)
+[![CI](https://github.com/Cpleasance/wake-workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/Cpleasance/wake-workstation/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust: 2021](https://img.shields.io/badge/Rust-2021_Edition-orange?logo=rust)](https://www.rust-lang.org)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/coryp/wake-workstation)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/Cpleasance/wake-workstation)
 [![GUI: egui](https://img.shields.io/badge/GUI-egui%20%2F%20eframe-brightgreen)](https://github.com/emilk/egui)
 [![Streaming: Moonlight + Sunshine](https://img.shields.io/badge/Streaming-Moonlight%20%2B%20Sunshine-9cf)](https://moonlight-stream.org)
 
@@ -84,7 +84,7 @@ Ensure you have the [Rust toolchain](https://rustup.rs/) installed:
 
 ```sh
 # Clone the repository
-git clone https://github.com/coryp/wake-workstation.git
+git clone https://github.com/Cpleasance/wake-workstation.git
 cd wake-workstation
 
 # Build optimized release binary

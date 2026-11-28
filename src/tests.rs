@@ -3,8 +3,8 @@ use crate::config::{
     save_config_to_path, validate_settings, AppConfig, HostProfile,
 };
 use crate::net::{
-    create_magic_packet, execute_power_action, format_latency, parse_ping_latency, send_ssh_wol,
-    validate_host_token,
+    create_magic_packet, execute_power_action, format_latency, parse_ping_latency,
+    send_magic_packet, send_ssh_wol, validate_host_token,
 };
 use crate::pipeline::{disconnected_check_receiver, LogLevel, PipelineState, Stage};
 use crate::{apply_cli_overrides, default_native_options, CliArgs};
@@ -368,6 +368,34 @@ fn test_magic_packet_structure_and_integrity() {
         let offset = 6 + rep * 6;
         assert_eq!(&packet[offset..offset + 6], &expected_bytes);
     }
+}
+
+#[test]
+fn test_send_magic_packet_loopback_socket_delivery() {
+    let listener = std::net::UdpSocket::bind("127.0.0.1:0")
+        .expect("Binding ephemeral loopback UDP socket should succeed");
+    let port = listener.local_addr().expect("Local addr").port();
+    listener
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .expect("Read timeout");
+
+    let mac = "00:11:22:33:44:55";
+    let expected_payload = create_magic_packet(mac).expect("Packet creation");
+
+    send_magic_packet(mac, "127.0.0.1", port)
+        .expect("Sending magic packet to loopback should succeed");
+
+    let mut buf = [0u8; 256];
+    let (len, _src) = listener
+        .recv_from(&mut buf)
+        .expect("Loopback socket should receive the magic packet");
+
+    assert_eq!(len, 102, "Received packet must be exactly 102 bytes");
+    assert_eq!(
+        &buf[..102],
+        &expected_payload[..],
+        "Payload must match magic packet"
+    );
 }
 
 #[test]
