@@ -180,6 +180,8 @@ pub fn create_magic_packet(mac: &str) -> Result<[u8; 102], String> {
 /// Send a Wake-on-LAN magic packet over local UDP broadcast.
 pub fn send_magic_packet(mac: &str, broadcast_ip: &str, port: u16) -> Result<(), String> {
     let packet = create_magic_packet(mac)?;
+    let broadcast_ip = broadcast_ip.trim();
+    validate_host_token(broadcast_ip, "Broadcast IP")?;
 
     let socket = UdpSocket::bind("0.0.0.0:0")
         .map_err(|e| format!("Failed to bind local UDP socket: {}", e))?;
@@ -192,7 +194,11 @@ pub fn send_magic_packet(mac: &str, broadcast_ip: &str, port: u16) -> Result<(),
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| format!("Failed to set socket timeout: {}", e))?;
 
-    let dest = format!("{}:{}", broadcast_ip.trim(), port);
+    let dest = if broadcast_ip.contains(':') && !broadcast_ip.starts_with('[') {
+        format!("[{}]:{}", broadcast_ip, port)
+    } else {
+        format!("{}:{}", broadcast_ip, port)
+    };
     let mut sent_any = false;
 
     if socket.send_to(&packet, &dest).is_ok() {
@@ -200,7 +206,7 @@ pub fn send_magic_packet(mac: &str, broadcast_ip: &str, port: u16) -> Result<(),
     }
 
     // Secondary fallback broadcast to global 255.255.255.255 if target isn't already global
-    if broadcast_ip.trim() != "255.255.255.255" {
+    if broadcast_ip != "255.255.255.255" {
         let global_dest = format!("255.255.255.255:{}", port);
         let _ = socket.send_to(&packet, &global_dest);
     }
